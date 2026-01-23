@@ -483,8 +483,8 @@ const TabGames = {
                         <button type="button" class="btn-close btn-close-white" @click="activeGame = null"></button>
                     </div>
                     <div class="modal-body text-center">
-                        <p class="mb-1 text-muted">Select games won by</p>
-                        <h4 class="mb-3">{{ activeGame.pairA.p1.name }} & {{ activeGame.pairA.p2.name }}</h4>
+                        <p class="mb-1 text-muted">Set Score for</p>
+                        <h4 class="mb-3">{{ activeGame.pairA.p1.name }} {{(activeGame.pairA.p2) ? '& ' + activeGame.pairA.p2.name : '' }}</h4>
                         
                         <div class="d-flex flex-wrap justify-content-center gap-2">
                             <button 
@@ -500,7 +500,7 @@ const TabGames = {
                         
                         <hr>
                         <p class="small text-muted">
-                            Team B ({{ activeGame.pairB.p1.name }} & {{ activeGame.pairB.p2.name }}) 
+                            Team B ({{ activeGame.pairB.p1.name }} {{ (activeGame.pairA.p2) ? '& ' + activeGame.pairB.p2.name : '' }}) 
                             will automatically receive {{ config.gamesPerMatch }} minus your selection.
                         </p>
                     </div>
