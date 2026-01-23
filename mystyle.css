@@ -33,3 +33,23 @@
 .modal-dialog {
 	width: 80vw;
 }
+
+/* Spinner Racket */
+/* 1. The Container */
+  .tennis-spinner-handle {
+    display: inline-block;
+    width: 7rem;  
+    height: 7rem; 
+    color: #28a745; /* Success green */
+  }
+
+  .tennis-spinner-handle svg {
+    animation: spin 1.5s linear infinite;
+    width: 100%;
+    height: 100%;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }

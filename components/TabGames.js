@@ -376,7 +376,7 @@ const TabGames = {
                                     <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
                                          :class="getHeaderClass(game.status)" 
                                          @click="switchStatus(game)">
-                                        <strong>Game {{ gIdx + 1 }}</strong>
+                                        <strong>Match {{ gIdx + 1 }}</strong>
                                         <span class="badge bg-light text-dark">
                                             {{ game.status === 'in_play' ? 'In Play' : (game.status === 'finished' ? 'Finished' : 'Awaiting') }}
                                         </span>
