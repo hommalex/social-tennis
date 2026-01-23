@@ -10,6 +10,7 @@ const TabSelection = {
         // Form vars
         const newPlayerGender = ref("Male");
         const newPlayerLevel = ref("B");
+		const allActivePlayerIds = ref(new Set());
         
         // Editing State
         const editingId = ref(null);
@@ -56,6 +57,11 @@ const TabSelection = {
                 }
             } else {
                 // NORMAL ADD MODE
+				
+				if (props.data.current.games.length > 0) {
+					props.dialog.alert("Adding players", "The matches have already been genenrated. You need reset the matches in order for this player to included in the matches.");
+				}
+				
                 const newList = [player, ...props.selected];
                 emit('update-selected', newList);
 				triggerFlash(player.id);
@@ -63,10 +69,45 @@ const TabSelection = {
             searchQuery.value = "";
             showDropdown.value = false;
         };
+		
+		
+		 const getAllActivePlayerIds = () => {
+            const currentActive = new Set();
+			const rounds = props.data?.current?.games;
+            if (rounds) {
+				rounds.forEach(round => {
+                    if (round.games) {
+                        round.games.forEach(game => {
+							if (game.pairA.p1) currentActive.add(game.pairA.p1.id);
+							if (game.pairA.p2) currentActive.add(game.pairA.p2.id);
+							if (game.pairB.p1) currentActive.add(game.pairB.p1.id);
+							if (game.pairB.p2) currentActive.add(game.pairB.p2.id);
+                        });
+                    }
+                });
+            }
+            allActivePlayerIds.value = currentActive;
+        };
 
-        const removePlayer = (playerId) => {
-            const newList = props.selected.filter(p => p.id !== playerId);
-            emit('update-selected', newList);
+        const removePlayer = async (playerId) => {
+			
+			getAllActivePlayerIds();
+			
+			const playerIsActive = allActivePlayerIds.value.has(playerId);
+			
+			if (playerIsActive) {
+				props.dialog.alert("Player is active", "Player is already playing. It cannot be deleted. Try to switch player or reset the matches.");
+                return;
+			} else {
+				const confirmed = await props.dialog.confirm(
+                    'Confirm Delete',
+                    `Are you sure you want delete this player?`
+                );
+				
+				if (!confirmed) return;
+			}
+			const newList = props.selected.filter(p => p.id !== playerId);
+			emit('update-selected', newList);
         };
         
         // Editing Functions
@@ -137,6 +178,11 @@ const TabSelection = {
                 });
                 cancelSwitch();
             } else {
+				
+				if (props.data.current.games.length > 0) {
+					props.dialog.alert("Adding players", "The matches have already been genenrated. You need reset the matches in order for this player to included in the matches.");
+				}
+				
                 // NORMAL ADD MODE
                 const newList = [newPlayer, ...props.selected];
                 setTimeout(() => emit('update-selected', newList), 1000);

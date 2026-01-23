@@ -153,10 +153,25 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
-        const switchStatus = (game) => {
+        const switchStatus = async (game) => {
             if (game.status === 'awaiting') game.status = 'in_play';
             else if (game.status === 'in_play') game.status = 'awaiting';
-            else if (game.status === 'finished') { game.status = 'awaiting'; game.scoreA = 0; game.scoreB = 0; }
+            else if (game.status === 'finished') {
+			
+				const confirmed = await props.dialog.confirm(
+                    'Update Match Status',
+                    `This will reset the match scrores and status. Do you want to continue?`
+                );
+				
+				if (!confirmed) {
+					return;
+				}
+				
+				game.status = 'awaiting'; 
+				game.scoreA = 0; 
+				game.scoreB = 0; 
+
+			}
             
             calculateActivePlayers();
             emit('update-games', generatedRounds.value);
@@ -340,7 +355,7 @@ const TabGames = {
                         </div>
                         <div class="col-md-3">
                             <button class="btn btn-primary w-100" @click="generateSchedule">
-                                <i class="bi bi-controller"></i> Generate Games
+                                <i class="bi bi-controller"></i> Generate Matches
                             </button>
                         </div>
                     </div>
@@ -353,7 +368,7 @@ const TabGames = {
                     </div>
                 </div>
                 <div v-else>
-                    <button class="btn btn-danger w-100" @click="resetGames"> <i class="bi bi-trash"></i> Reset Games </button>
+                    <button class="btn btn-danger w-100" @click="resetGames"> <i class="bi bi-trash"></i> Reset Matches </button>
                 </div>
             </div>
         </div>
