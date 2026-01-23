@@ -21,31 +21,49 @@
 <div id="app">
  <!-- -->
     <div v-if="isLoading" class="loading-overlay">
-	
-	  <div class="tennis-spinner-handle" role="status">
-		<svg viewBox="0 0 100 100" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-		  
-		  <g transform="rotate(45, 50, 50)">
-			<ellipse cx="50" cy="20" rx="15" ry="20" stroke="currentColor" stroke-width="4" fill="none"/>
-			
-			<line x1="50" y1="40" x2="50" y2="80" stroke="currentColor" stroke-width="4" />
-			
-			<line x1="42" y1="10" x2="42" y2="30" stroke="currentColor" stroke-width="1" />
-			<line x1="58" y1="10" x2="58" y2="30" stroke="currentColor" stroke-width="1" />
-			<line x1="38" y1="20" x2="62" y2="20" stroke="currentColor" stroke-width="1" />
-		  </g>
-		  
-		  <g transform="rotate(-45, 50, 50)">
-			<ellipse cx="50" cy="20" rx="15" ry="20" stroke="currentColor" stroke-width="4" fill="none"/>
-			<line x1="50" y1="40" x2="50" y2="80" stroke="currentColor" stroke-width="4" />
-			<line x1="42" y1="10" x2="42" y2="30" stroke="currentColor" stroke-width="1" />
-			<line x1="58" y1="10" x2="58" y2="30" stroke="currentColor" stroke-width="1" />
-			<line x1="38" y1="20" x2="62" y2="20" stroke="currentColor" stroke-width="1" />
-		  </g>
-		  
-		</svg>
-		<span class="sr-only" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);">Loading...</span>
-	  </div>
+		  <div class="navan-spinner-container">
+			<svg class="navan-spinner-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+			  
+			  <defs>
+				<path id="circleTop" d="M 8,50 A 42,42 0 0,1 92,50" /> 
+				<path id="circleBot" d="M 8,50 A 42,42 0 0,0 92,50" />
+			  </defs>
+
+			  <g transform="translate(50, 50) scale(0.75) translate(-50, -50)"> 
+				
+				<g transform="rotate(45, 50, 50)">
+				  <ellipse cx="50" cy="20" rx="12" ry="16" class="navan-racket" stroke-width="3" />
+				  <line x1="50" y1="36" x2="50" y2="75" class="navan-racket" stroke-width="3" />
+				  <line x1="44" y1="12" x2="44" y2="28" class="navan-racket" stroke-width="0.5" />
+				  <line x1="56" y1="12" x2="56" y2="28" class="navan-racket" stroke-width="0.5" />
+				  <line x1="40" y1="20" x2="60" y2="20" class="navan-racket" stroke-width="0.5" />
+				</g>
+				
+				<g transform="rotate(-45, 50, 50)">
+				  <ellipse cx="50" cy="20" rx="12" ry="16" class="navan-racket" stroke-width="3" />
+				  <line x1="50" y1="36" x2="50" y2="75" class="navan-racket" stroke-width="3" />
+				  <line x1="44" y1="12" x2="44" y2="28" class="navan-racket" stroke-width="0.5" />
+				  <line x1="56" y1="12" x2="56" y2="28" class="navan-racket" stroke-width="0.5" />
+				  <line x1="40" y1="20" x2="60" y2="20" class="navan-racket" stroke-width="0.5" />
+				</g>
+
+				<circle cx="50" cy="30" r="3" fill="#005826" />
+			  </g>
+
+			  <text class="navan-text">
+				<textPath xlink:href="#circleTop" startOffset="50%" text-anchor="middle">
+				  NAVAN
+				</textPath>
+			  </text>
+			  
+			  <text class="navan-text">
+				<textPath xlink:href="#circleBot" startOffset="50%" text-anchor="middle">
+				  TENNIS CLUB
+				</textPath>
+			  </text>
+
+			</svg>
+		  </div>
 	
     </div>
 
@@ -113,6 +131,9 @@
 </div>
 
 <script>
+// git add .
+// git commit -m "small fix 5"
+// git push -u origin main
     const { createApp, ref, computed, reactive, onMounted } = Vue;
 
     const JSONBIN_CONFIG = {
