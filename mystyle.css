@@ -38,8 +38,8 @@
 /* 1. The Container */
   .tennis-spinner-handle {
     display: inline-block;
-    width: 7rem;  
-    height: 7rem; 
+    width: 5rem;  
+    height: 5rem; 
     color: #28a745; /* Success green */
   }
 
