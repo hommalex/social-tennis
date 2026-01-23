@@ -177,9 +177,10 @@ const TabSelection = {
                             };
 
                             addStats(game.pairA.p1.id, game.scoreA);
-                            addStats(game.pairA.p2.id, game.scoreA);
+                            if (game.pairA.p2) addStats(game.pairA.p2.id, game.scoreA);
+                            
                             addStats(game.pairB.p1.id, game.scoreB);
-                            addStats(game.pairB.p2.id, game.scoreB);
+                            if (game.pairB.p2) addStats(game.pairB.p2.id, game.scoreB);
                         }
                     });
                 }

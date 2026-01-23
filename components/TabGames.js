@@ -27,10 +27,10 @@ const TabGames = {
                     if (round.games) {
                         round.games.forEach(game => {
                             if (game.status === 'in_play') {
-                                currentActive.add(game.pairA.p1.id);
-                                currentActive.add(game.pairA.p2.id);
-                                currentActive.add(game.pairB.p1.id);
-                                currentActive.add(game.pairB.p2.id);
+                                if (game.pairA.p1) currentActive.add(game.pairA.p1.id);
+                                if (game.pairA.p2) currentActive.add(game.pairA.p2.id);
+                                if (game.pairB.p1) currentActive.add(game.pairB.p1.id);
+                                if (game.pairB.p2) currentActive.add(game.pairB.p2.id);
                             }
                         });
                     }
@@ -56,15 +56,20 @@ const TabGames = {
             generatedRounds.value.forEach(round => {
                 if(!round.games) return;
                 round.games.forEach(game => {
-                    const idsA = [game.pairA.p1.id, game.pairA.p2.id].sort();
-                    const keyA = idsA.join('_');
-                    if (!pairHistory[keyA]) pairHistory[keyA] = [];
-                    pairHistory[keyA].push(round.roundNumber);
+                    // Only check for conflicts if it is a Doubles game (has p2)
+                    if (game.pairA.p2) {
+                        const idsA = [game.pairA.p1.id, game.pairA.p2.id].sort();
+                        const keyA = idsA.join('_');
+                        if (!pairHistory[keyA]) pairHistory[keyA] = [];
+                        pairHistory[keyA].push(round.roundNumber);
+                    }
 
-                    const idsB = [game.pairB.p1.id, game.pairB.p2.id].sort();
-                    const keyB = idsB.join('_');
-                    if (!pairHistory[keyB]) pairHistory[keyB] = [];
-                    pairHistory[keyB].push(round.roundNumber);
+                    if (game.pairB.p2) {
+                        const idsB = [game.pairB.p1.id, game.pairB.p2.id].sort();
+                        const keyB = idsB.join('_');
+                        if (!pairHistory[keyB]) pairHistory[keyB] = [];
+                        pairHistory[keyB].push(round.roundNumber);
+                    }
                 });
             });
 
@@ -196,10 +201,9 @@ const TabGames = {
             if (error) { errorMsg.value = error; return; }
             errorMsg.value = ""; 
 
-            if(props.data.current) {
-                props.data.current.numOfRounds = config.numRounds;
-                props.data.current.gamesPerMatch = config.gamesPerMatch;
-            }
+            if (!props.data.current) props.data.current = {};
+            props.data.current.numOfRounds = config.numRounds;
+            props.data.current.gamesPerMatch = config.gamesPerMatch;
 
             const schedule = [];
             const players = [...props.selected]; 
@@ -211,6 +215,7 @@ const TabGames = {
                 let availablePlayers = [...players].sort((a, b) => getScore(b) - getScore(a));
                 let roundPairs = [];
 
+                // Step A: Create Pairs
                 while (availablePlayers.length >= 2) {
                     const p1 = availablePlayers.shift(); 
                     let bestPartnerIndex = -1;
@@ -227,6 +232,7 @@ const TabGames = {
                     roundPairs.push({ p1, p2, strength: getScore(p1) + getScore(p2) });
                 }
 
+                // Step B: Create Matches
                 roundPairs.sort((a, b) => b.strength - a.strength);
 
                 while (roundPairs.length >= 2) {
@@ -234,6 +240,7 @@ const TabGames = {
                     const pairB = roundPairs.shift(); 
                     roundGames.push({
                         id: Math.random().toString(36).substr(2, 9),
+                        type: 'doubles',
                         pairA: pairA,
                         pairB: pairB,
                         status: 'awaiting',
@@ -242,13 +249,22 @@ const TabGames = {
                     });
                 }
 
-                let sitOuts = [];
+                // Step C: Handle Leftover Pair (Singles)
                 if (roundPairs.length > 0) {
-                    const leftOver = roundPairs.shift();
-                    sitOuts.push(leftOver.p1, leftOver.p2);
+                    const leftover = roundPairs.shift(); // This pair becomes opponents
+                    roundGames.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        type: 'singles', // Mark as singles
+                        pairA: { p1: leftover.p1, p2: null, strength: getScore(leftover.p1) },
+                        pairB: { p1: leftover.p2, p2: null, strength: getScore(leftover.p2) },
+                        status: 'awaiting',
+                        scoreA: 0,
+                        scoreB: 0
+                    });
                 }
 
-                schedule.push({ roundNumber: r, games: roundGames, sitOuts: sitOuts });
+                // Sitouts is now always empty if even number validation passes
+                schedule.push({ roundNumber: r, games: roundGames, sitOuts: [] });
             }
             generatedRounds.value = schedule;
             calculateActivePlayers(); 
@@ -380,7 +396,7 @@ const TabGames = {
                                                     </button>  
                                                     <span class="text-truncate">{{ game.pairA.p1.name }}</span>
                                                 </span> 
-                                                <span class="d-flex align-items-center text-truncate"
+                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate"
                                                       :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"
                                                       :title="game.pairA.p2.name"> 
                                                     <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
@@ -416,7 +432,7 @@ const TabGames = {
                                                     </button> 
                                                     <span class="text-truncate">{{ game.pairB.p1.name }}</span>
                                                 </span> 
-                                                <span class="d-flex align-items-center text-truncate"
+                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate"
                                                       :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"
                                                       :title="game.pairB.p2.name"> 
                                                     <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>

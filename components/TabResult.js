@@ -35,11 +35,13 @@ const TabResult = {
                             gamesPlayed[pid] += 1;
                         };
 
-                        updatePlayer(game.pairA.p1.id, game.scoreA);
-                        updatePlayer(game.pairA.p2.id, game.scoreA);
-                        updatePlayer(game.pairB.p1.id, game.scoreB);
-                        updatePlayer(game.pairB.p2.id, game.scoreB);
-                    }
+                        if (game.pairA.p1) updatePlayer(game.pairA.p1.id, game.scoreA);
+                        if (game.pairA.p2) updatePlayer(game.pairA.p2.id, game.scoreA);
+
+                        // Team B
+                        if (game.pairB.p1) updatePlayer(game.pairB.p1.id, game.scoreB);
+                        if (game.pairB.p2) updatePlayer(game.pairB.p2.id, game.scoreB);
+					}
                 });
             });
 

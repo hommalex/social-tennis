@@ -246,26 +246,6 @@
                 await syncToCloud();
             };
 
-            // Helper to save current jsonData state to cloud
-            const syncToCloud = async () => {
-                isLoading.value = true;
-                try {
-                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Master-Key': JSONBIN_CONFIG.apiKey
-                        },
-                        body: JSON.stringify(jsonData.value)
-                    });
-                } catch (error) {
-                    console.error("Error saving data:", error);
-                    alert("Failed to save to cloud.");
-                } finally {
-                    isLoading.value = false;
-                }
-            };
-
 			const handleSubstitutePlayer = async ({ oldId, newPlayer }) => {
 				// 1. Update Selected List
 				const selIndex = selectedPlayers.value.findIndex(p => p.id === oldId);
@@ -290,8 +270,8 @@
 							round.games.forEach(game => {
 								// Helper to check and replace in a pair
 								const checkAndReplace = (pair) => {
-									if (pair.p1.id === oldId) pair.p1 = newPlayer;
-									if (pair.p2.id === oldId) pair.p2 = newPlayer;
+									if (pair.p1 && pair.p1.id === oldId) pair.p1 = newPlayer;
+									if (pair.p2 && pair.p2.id === oldId) pair.p2 = newPlayer;
 									// Recalculate strength (optional, but good practice)
 									// Note: We'd need the getScore logic here to be precise, 
 									// but updating the object is the critical part.
@@ -326,6 +306,26 @@
                 // 3. Save to Cloud (This saves the cleared games AND the updated player ratios)
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
                 await syncToCloud();
+            };
+
+            // Helper to save current jsonData state to cloud
+            const syncToCloud = async () => {
+                isLoading.value = true;
+                try {
+                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': JSONBIN_CONFIG.apiKey
+                        },
+                        body: JSON.stringify(jsonData.value)
+                    });
+                } catch (error) {
+                    console.error("Error saving data:", error);
+                    alert("Failed to save to cloud.");
+                } finally {
+                    isLoading.value = false;
+                }
             };
 			
 			const saveGames = async (newSchedule) => {
