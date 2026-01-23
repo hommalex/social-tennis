@@ -1,0 +1,35 @@
+/* Custom styles for the autocomplete dropdown */
+.autocomplete-list {
+	position: absolute;
+	z-index: 1000;
+	width: 100%;
+	max-height: 200px;
+	overflow-y: auto;
+	border: 1px solid #ced4da;
+	border-top: none;
+}
+.autocomplete-item {
+	cursor: pointer;
+}
+.autocomplete-item:hover {
+	background-color: #f8f9fa;
+}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* Spinner overlay for API calls */
+.loading-overlay {
+	position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+	background: rgba(255,255,255,0.7); z-index: 9999;
+	display: flex; justify-content: center; align-items: center;
+}
+
+/* Modal Backdrop */
+.custom-modal-backdrop {
+	position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+	background-color: rgba(0,0,0,0.5); z-index: 1050;
+	display: flex; justify-content: center; align-items: center;
+}
+.modal-dialog {
+	width: 80vw;
+}
