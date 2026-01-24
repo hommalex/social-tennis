@@ -71,7 +71,7 @@
         <div class="container-fluid">
             <a class="navbar-brand" href="#">
 				<img src="./NavanLogo.png" style="height: 32px" alt="logo" />
-				Social Tuesday Tennis
+				NTC Social Tennis
 			</a>
             <div class="d-flex">
                 <button class="btn btn-sm btn-outline-light" @click="fetchData">Refresh Data</button>
@@ -108,6 +108,10 @@
             </div>
         </div>
     </div>
+	
+	<div class="footer">
+		@{{ thisYear }} - Navan Tennis Club
+	</div>
 			
 	<div v-if="modalState.show" class="modal custom-modal-backdrop">
 		<div class="modal-dialog">
@@ -156,6 +160,8 @@
                 current: { numOfRounds: 3, list: [], games: [] },
                 players: [] 
             });
+			
+			const thisYear = new Date().getFullYear();
 
             const selectedPlayers = ref([]);
 
@@ -403,7 +409,8 @@
 				saveGames,
 				modalState,
                 resolveModal,
-                dialog
+                dialog,
+				thisYear
             };
         }
     }).mount('#app');

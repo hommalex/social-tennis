@@ -69,3 +69,9 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
+  
+ /* FOOTER */
+.footer{
+	padding: 60px 0;
+	text-align: center;
+}

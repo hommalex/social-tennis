@@ -14,6 +14,14 @@ const TabGames = {
         const showRound = ref(1);
         const activePlayerIds = ref(new Set());
         const activeGame = ref(null);
+		// Helper to get name of player currently selected for swap
+        const swapSourceName = computed(() => {
+            if (!swapSource.value) return "";
+            const { rIdx, gIdx, pairKey, pKey } = swapSource.value;
+            try {
+                return generatedRounds.value[rIdx].games[gIdx][pairKey][pKey].name;
+            } catch (e) { return "Player"; }
+        });
 
         // Swap & Conflict State
         const swapSource = ref(null); 
@@ -114,6 +122,15 @@ const TabGames = {
         const handleSwap = (rIdx, gIdx, pairKey, pKey) => {
             if (!swapSource.value) {
                 swapSource.value = { rIdx, gIdx, pairKey, pKey };
+                return;
+            }
+			
+			const clickedRound = generatedRounds.value[rIdx];
+            const clickedGame = clickedRound.games[gIdx];
+
+            if (clickedGame.status === 'finished') {
+                props.dialog.alert("Action Denied", "Cannot swap players in a finished game.");
+                swapSource.value = null;
                 return;
             }
 
@@ -311,6 +328,7 @@ const TabGames = {
             resetGames,
             handleSwap, 
             swapSource, 
+			swapSourceName,
             openScoreModal, 
             switchStatus,
             getHeaderClass,
@@ -406,7 +424,8 @@ const TabGames = {
                                                     <button type="button" 
                                                         class="btn btn-sm me-1 p-0 px-1 flex-shrink-0"
                                                         :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')">
+                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"
+														:disabled="game.status === 'finished'">
                                                         <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
                                                     </button>  
                                                     <span class="text-truncate">{{ game.pairA.p1.name }}</span>
@@ -419,7 +438,8 @@ const TabGames = {
                                                     <button type="button" 
                                                         class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" 
                                                         :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')">
+                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"
+														:disabled="game.status === 'finished'">
                                                         <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
                                                     </button> 
                                                     <span class="text-truncate">{{ game.pairA.p2.name }}</span>
@@ -442,7 +462,8 @@ const TabGames = {
                                                     <button type="button" 
                                                         class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" 
                                                         :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')">
+                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"
+														:disabled="game.status === 'finished'">
                                                         <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
                                                     </button> 
                                                     <span class="text-truncate">{{ game.pairB.p1.name }}</span>
@@ -455,7 +476,8 @@ const TabGames = {
                                                     <button type="button" 
                                                         class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" 
                                                         :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')">
+                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"
+														:disabled="game.status === 'finished'">
                                                         <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
                                                     </button> 
                                                     <span class="text-truncate">{{ game.pairB.p2.name }}</span>
@@ -489,6 +511,7 @@ const TabGames = {
                     </div>
             </div>
         </div>
+		<p v-if="hasFinishedGames" class="text-secondary"> Reset is disabled once a match has been finalised. </p>
 
         <div v-if="activeGame" class="modal custom-modal-backdrop" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
             <div class="modal-dialog modal-dialog-centered">
@@ -521,6 +544,14 @@ const TabGames = {
                     </div>
                 </div>
             </div>
+        </div>
+		
+		<div v-if="swapSource" class="alert alert-info position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-5 shadow-lg d-flex justify-content-center align-items-center" role="alert">
+            <i class="bi bi-arrow-left-right me-2 fs-4"></i>
+            <span>
+                Select another player to swap with <strong>{{ swapSourceName }}</strong>
+            </span>
+            <button class="btn btn-sm btn-outline-dark ms-3 fw-bold" @click="swapSource = null">Cancel</button>
         </div>
 
         <div v-if="conflictMsg" class="alert alert-danger position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-3 shadow-lg d-flex justify-content-center align-items-center" role="alert">
