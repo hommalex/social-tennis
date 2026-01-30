@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Social Tuesday Tennis</title>
+    <title>NTC Social Tennis</title>
     
-    <link rel="stylesheet" href="bootstrap.min.css">
+    <link rel="stylesheet" href="./assets/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="./mystyle.css">
+    <link rel="stylesheet" href="./assets/css/mystyle.css">
 
-    <script src="./vue3.js"></script>
+    <script src="./assets/js/vue3.js"></script>
     
     <script src="./components/TabSelection.js"></script>
     <script src="./components/TabGames.js"></script>
@@ -70,11 +70,11 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">
-				<img src="./NavanLogo.png" style="height: 32px" alt="logo" />
+				<img src="./assets/images/NavanLogo.png" style="height: 32px" alt="logo" />
 				NTC Social Tennis
 			</a>
             <div class="d-flex">
-                <button class="btn btn-sm btn-outline-light" @click="fetchData">Refresh Data</button>
+                <button class="btn btn-sm btn-outline-light" @click="infoModal = true"> <i class="bi bi-info-circle"></i> Information</button>
             </div>
         </div>
     </nav>
@@ -132,6 +132,19 @@
 			</div>
 		</div>
 	</div>
+	<div v-if="infoModal" class="modal custom-modal-backdrop">
+		<div class="modal-dialog modal-dialog-scrollable">
+			<div class="modal-content">
+					<div class="modal-header bg-primary text-white">
+					<h5 class="modal-title"> <i class="bi bi-info-circle"></i> Information</h5>
+					<button type="button" class="btn-close" @click="infoModal = false"></button>
+				</div>
+				<div class="modal-body">
+					<img src="./assets/images/tennis-information.jpg" alt="Game Information" style="width: 100%;" />
+				</div>
+			</div>
+		</div>
+	</div>
 </div>
 
 <script>
@@ -154,6 +167,7 @@
         setup() {
             const currentTab = ref('tab-selection');
             const isLoading = ref(false);
+            const infoModal = ref(false);
             
             const jsonData = ref({
                 last_update: "",
@@ -396,6 +410,7 @@
 
             return {
                 currentTab,
+				infoModal,
                 tabs,
                 jsonData,
                 selectedPlayers,

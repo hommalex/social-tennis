@@ -2,7 +2,7 @@ const TabGames = {
     props: ['data', 'selected', 'dialog'],
     emits: ['update-games'],
     setup(props, { emit }) {
-        const { ref, reactive, onMounted, watch } = Vue;
+        const { ref, reactive, onMounted, watch, computed } = Vue;
 
         const config = reactive({
             gamesPerMatch: 7, 
@@ -12,6 +12,7 @@ const TabGames = {
         const generatedRounds = ref([]); 
         const errorMsg = ref("");
         const showRound = ref(1);
+		const viewMode = ref('rounds');
         const activePlayerIds = ref(new Set());
         const activeGame = ref(null);
 		// Helper to get name of player currently selected for swap
@@ -52,6 +53,51 @@ const TabGames = {
             return generatedRounds.value.some(round => 
                 round.games && round.games.some(g => g.status === 'finished')
             );
+        });
+		
+		// --- UPDATED: Computed Property for Flat Views ---
+        const filteredGames = computed(() => {
+            if (viewMode.value === 'rounds') return []; 
+            
+            const list = [];
+            
+            generatedRounds.value.forEach((round, rIdx) => {
+                if (round.games) {
+                    round.games.forEach((game, gIdx) => {
+                        let include = false;
+
+                        // 1. ACTIVE VIEW: Show all games currently running
+                        if (viewMode.value === 'active') {
+                            if (game.status === 'in_play') include = true;
+                        } 
+                        // 2. QUEUE VIEW: Show awaiting games ONLY if all players are free
+                        else if (viewMode.value === 'queue') {
+                            if (game.status === 'awaiting') {
+                                // Check if any player is currently busy
+                                const p1Busy = activePlayerIds.value.has(game.pairA.p1.id);
+                                const p2Busy = game.pairA.p2 && activePlayerIds.value.has(game.pairA.p2.id);
+                                const p3Busy = activePlayerIds.value.has(game.pairB.p1.id);
+                                const p4Busy = game.pairB.p2 && activePlayerIds.value.has(game.pairB.p2.id);
+
+                                // Include only if NO ONE is busy
+                                if (!p1Busy && !p2Busy && !p3Busy && !p4Busy) {
+                                    include = true;
+                                }
+                            }
+                        }
+
+                        if (include) {
+                            list.push({
+                                ...game,
+                                roundNum: round.roundNumber, 
+                                originalRIdx: rIdx,          
+                                originalGIdx: gIdx           
+                            });
+                        }
+                    });
+                }
+            });
+            return list;
         });
 
         const checkConflicts = () => {
@@ -170,32 +216,37 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
-        const switchStatus = async (game) => {
-            if (game.status === 'awaiting') game.status = 'in_play';
-            else if (game.status === 'in_play') game.status = 'awaiting';
-            else if (game.status === 'finished') {
-			
-				const confirmed = await props.dialog.confirm(
-                    'Update Match Status',
-                    `This will reset the match scrores and status. Do you want to continue?`
-                );
-				
-				if (!confirmed) {
-					return;
-				}
-				
-				game.status = 'awaiting'; 
-				game.scoreA = 0; 
-				game.scoreB = 0; 
+        const switchStatus = (game) => {
+            // 1. Resolve the Real Game Object
+            let targetGame = game;
+            
+            // If this is a copy from the flat view (has indices), find the original
+            if (game.originalRIdx !== undefined && game.originalGIdx !== undefined) {
+                targetGame = generatedRounds.value[game.originalRIdx].games[game.originalGIdx];
+            }
 
-			}
+            // 2. Apply Logic to targetGame
+            if (targetGame.status === 'awaiting') {
+                targetGame.status = 'in_play';
+            } else if (targetGame.status === 'in_play') {
+                targetGame.status = 'awaiting';
+            } else if (targetGame.status === 'finished') { 
+                targetGame.status = 'awaiting'; 
+                targetGame.scoreA = 0; 
+                targetGame.scoreB = 0; 
+            }
             
             calculateActivePlayers();
             emit('update-games', generatedRounds.value);
         };
 
         const openScoreModal = (game) => {
-            activeGame.value = game;
+            // 1. Resolve the Real Game Object
+            if (game.originalRIdx !== undefined && game.originalGIdx !== undefined) {
+                activeGame.value = generatedRounds.value[game.originalRIdx].games[game.originalGIdx];
+            } else {
+                activeGame.value = game;
+            }
         };
 
         const saveScore = (scoreA) => {
@@ -337,7 +388,9 @@ const TabGames = {
             saveScore,
             conflictedPlayerIds,
             conflictMsg,
-			hasFinishedGames
+			hasFinishedGames,
+			viewMode,
+            filteredGames
         };
     },
     template: `
@@ -393,122 +446,161 @@ const TabGames = {
             
         <div v-if="generatedRounds.length > 0" class="card bg-light mb-4">
             <div class="card-body">
-                    <h4 class="text-primary border-bottom pb-2">Round</h4>
-                    <div class="btn-group w-100 mb-3" role="group">
-                        <template v-for="(round, rIdx) in generatedRounds" :key="'tab' + round.roundNumber">
-                            <input type="radio" class="btn-check" name="rounds" :id="'roundNum' + round.roundNumber" :value="round.roundNumber" v-model="showRound">
-                            <label class="btn btn-outline-primary" :for="'roundNum' + round.roundNumber"> {{ round.roundNumber }} </label>
-                        </template>
+                    <div v-if="conflictMsg" class="alert alert-danger mb-3">
+                        <i class="bi bi-exclamation-octagon-fill"></i> {{ conflictMsg }}
                     </div>
-                    
-                    <div v-for="(round, rIdx) in generatedRounds" :key="round.roundNumber">
-                    <template v-if="showRound === round.roundNumber">
+
+                    <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+                        <h4 class="text-primary mb-0">
+                            {{ viewMode === 'rounds' ? 'Round' : (viewMode === 'active' ? 'Active' : 'Queue') }}
+                        </h4>
+                        <div class="btn-group" role="group">
+                            <input type="radio" class="btn-check" name="viewMode" id="vm1" value="rounds" v-model="viewMode">
+                            <label class="btn btn-outline-primary" for="vm1"><i class="bi bi-list-ol"></i></label>
+
+                            <input type="radio" class="btn-check" name="viewMode" id="vm2" value="active" v-model="viewMode">
+                            <label class="btn btn-outline-primary" for="vm2"><i class="bi bi-activity"></i></label>
+
+                            <input type="radio" class="btn-check" name="viewMode" id="vm3" value="queue" v-model="viewMode">
+                            <label class="btn btn-outline-primary" for="vm3"><i class="bi bi-hourglass"></i></label>
+                        </div>
+                    </div>
+
+                    <template v-if="viewMode === 'rounds'">
+                        <div class="btn-group w-100 mb-3" role="group">
+                            <template v-for="(round, rIdx) in generatedRounds" :key="'tab' + round.roundNumber">
+                                <input type="radio" class="btn-check" name="rounds" :id="'roundNum' + round.roundNumber" :value="round.roundNumber" v-model="showRound">
+                                <label class="btn btn-outline-primary" :for="'roundNum' + round.roundNumber"> {{ round.roundNumber }} </label>
+                            </template>
+                        </div>
+                        
+                        <div v-for="(round, rIdx) in generatedRounds" :key="round.roundNumber">
+                            <template v-if="showRound === round.roundNumber">
+                                <div class="row row-cols-1 row-cols-md-2 g-3">
+                                    <div class="col" v-for="(game, gIdx) in round.games" :key="game.id">
+                                        <div class="card h-100 border-secondary shadow-sm">
+                                            <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
+                                                 :class="getHeaderClass(game.status)" 
+                                                 @click="switchStatus(game)">
+                                                <strong>Game {{ gIdx + 1 }}</strong>
+                                                <span class="badge bg-light text-dark">
+                                                    {{ game.status === 'in_play' ? 'In Play' : (game.status === 'finished' ? 'Finished' : 'Awaiting') }}
+                                                </span>
+                                            </div>
+                                            <div class="card-body p-2">
+                                                <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-5 border-primary">
+                                                    <div style="min-width: 0;">
+                                                        <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p1.id)}"> 
+                                                            <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
+                                                            <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button>  
+                                                            <span class="text-truncate">{{ game.pairA.p1.name }}</span>
+                                                        </span> 
+                                                        <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"> 
+                                                            <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
+                                                            <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <span class="text-truncate">{{ game.pairA.p2.name }}</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="text-end mt-2 flex-shrink-0">
+                                                        <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreA }}</button>
+                                                    </div>
+                                                </div>
+                                                <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
+                                                    <div style="min-width: 0;">
+                                                        <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p1.id)}"> 
+                                                            <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
+                                                            <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <span class="text-truncate">{{ game.pairB.p1.name }}</span>
+                                                        </span> 
+                                                        <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"> 
+                                                            <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
+                                                            <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <span class="text-truncate">{{ game.pairB.p2.name }}</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="text-end mt-2 flex-shrink-0">
+                                                        <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreB }}</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div v-if="round.sitOuts.length > 0" class="alert alert-warning mt-3">
+                                    <strong><i class="bi bi-pause-circle-fill"></i> Sitting Out:</strong> 
+                                    <span v-for="(p, i) in round.sitOuts" :key="p.id">
+                                        <span class="ms-2 badge border border-dark text-truncate d-inline-flex align-items-center" style="max-width: 150px;" :class="activePlayerIds.has(p.id) ? 'bg-success' : 'bg-warning text-dark'">
+                                            <i v-if="activePlayerIds.has(p.id)" class="bi bi-activity me-1"></i>
+                                            <i v-else class="bi bi-hourglass-split me-1"></i> 
+                                            <span class="text-truncate">{{ p.name }}</span>
+                                        </span>
+                                    </span>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <div v-if="filteredGames.length === 0" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-1"></i>
+                            <p>No matches found in this view.</p>
+                        </div>
                         <div class="row row-cols-1 row-cols-md-2 g-3">
-                            <div class="col" v-for="(game, gIdx) in round.games" :key="game.id">
+                            <div class="col" v-for="game in filteredGames" :key="game.id">
                                 <div class="card h-100 border-secondary shadow-sm">
                                     <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
                                          :class="getHeaderClass(game.status)" 
                                          @click="switchStatus(game)">
-                                        <strong>Match {{ gIdx + 1 }}</strong>
+                                        <strong>Round {{ game.roundNum }}</strong>
                                         <span class="badge bg-light text-dark">
                                             {{ game.status === 'in_play' ? 'In Play' : (game.status === 'finished' ? 'Finished' : 'Awaiting') }}
                                         </span>
                                     </div>
                                     <div class="card-body p-2">
                                         <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-5 border-primary">
-                                            <div style="min-width: 0;"> <span class="d-flex align-items-center mb-1 text-truncate" 
-                                                      :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p1.id)}"
-                                                      :title="game.pairA.p1.name"> 
+                                            <div style="min-width: 0;">
+                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p1.id)}"> 
                                                     <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                    <button type="button" 
-                                                        class="btn btn-sm me-1 p-0 px-1 flex-shrink-0"
-                                                        :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"
-														:disabled="game.status === 'finished'">
-                                                        <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
-                                                    </button>  
                                                     <span class="text-truncate">{{ game.pairA.p1.name }}</span>
                                                 </span> 
-                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate"
-                                                      :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"
-                                                      :title="game.pairA.p2.name"> 
+                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"> 
                                                     <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                    <button type="button" 
-                                                        class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" 
-                                                        :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"
-														:disabled="game.status === 'finished'">
-                                                        <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
-                                                    </button> 
                                                     <span class="text-truncate">{{ game.pairA.p2.name }}</span>
                                                 </span>
                                             </div>
-                                            <div class="text-end mt-1 flex-shrink-0">
-                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">
-                                                    {{ game.scoreA }}
-                                                </button>
+                                            <div class="text-end mt-2 flex-shrink-0">
+                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreA }}</button>
                                             </div>
                                         </div>
-
                                         <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
                                             <div style="min-width: 0;">
-                                                <span class="d-flex align-items-center mb-1 text-truncate"
-                                                      :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p1.id)}"
-                                                      :title="game.pairB.p1.name"> 
+                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p1.id)}"> 
                                                     <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                    <button type="button" 
-                                                        class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" 
-                                                        :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"
-														:disabled="game.status === 'finished'">
-                                                        <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
-                                                    </button> 
                                                     <span class="text-truncate">{{ game.pairB.p1.name }}</span>
                                                 </span> 
-                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate"
-                                                      :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"
-                                                      :title="game.pairB.p2.name"> 
+                                                <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"> 
                                                     <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                    <button type="button" 
-                                                        class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" 
-                                                        :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" 
-                                                        @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"
-														:disabled="game.status === 'finished'">
-                                                        <i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i>
-                                                    </button> 
                                                     <span class="text-truncate">{{ game.pairB.p2.name }}</span>
                                                 </span>
                                             </div>
-                                            <div class="text-end mt-1 flex-shrink-0">
-                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">
-                                                    {{ game.scoreB }}
-                                                </button>
+                                            <div class="text-end mt-2 flex-shrink-0">
+                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreB }}</button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-
-                        <div v-if="round.sitOuts.length > 0" class="alert alert-warning mt-3">
-                            <strong><i class="bi bi-pause-circle-fill"></i> Sitting Out:</strong> 
-                            <span v-for="(p, i) in round.sitOuts" :key="p.id">
-                                <span class="ms-2 badge border border-dark text-truncate d-inline-flex align-items-center" 
-                                      style="max-width: 150px;"
-                                      :class="activePlayerIds.has(p.id) ? 'bg-success' : 'bg-warning text-dark'"
-                                      :title="p.name">
-                                    <i v-if="activePlayerIds.has(p.id)" class="bi bi-activity me-1"></i>
-                                    <i v-else class="bi bi-hourglass-split me-1"></i> 
-                                    <span class="text-truncate">{{ p.name }}</span>
-                                </span>
-                            </span>
-                        </div>
                     </template>
-                    </div>
             </div>
         </div>
 		<p v-if="hasFinishedGames" class="text-secondary"> Reset is disabled once a match has been finalised. </p>
@@ -546,7 +638,12 @@ const TabGames = {
             </div>
         </div>
 		
-		<div v-if="swapSource" class="alert alert-info position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-5 shadow-lg d-flex justify-content-center align-items-center" role="alert">
+		<div v-if="!swapSource && conflictMsg" class="alert alert-danger position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-3 shadow-lg d-flex justify-content-center align-items-center" role="alert">
+            <i class="bi bi-exclamation-octagon-fill me-2 fs-4"></i>
+            <span class="fw-bold">{{ conflictMsg }}</span>
+        </div>
+		
+		<div v-if="swapSource" class="alert alert-info position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-3 shadow-lg d-flex justify-content-center align-items-center" role="alert">
             <i class="bi bi-arrow-left-right me-2 fs-4"></i>
             <span>
                 Select another player to swap with <strong>{{ swapSourceName }}</strong>
@@ -554,10 +651,7 @@ const TabGames = {
             <button class="btn btn-sm btn-outline-dark ms-3 fw-bold" @click="swapSource = null">Cancel</button>
         </div>
 
-        <div v-if="conflictMsg" class="alert alert-danger position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-3 shadow-lg d-flex justify-content-center align-items-center" role="alert">
-            <i class="bi bi-exclamation-octagon-fill me-2 fs-4"></i>
-            <span class="fw-bold">{{ conflictMsg }}</span>
-        </div>
+
 
     </div>
     `
