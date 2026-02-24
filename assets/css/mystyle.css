@@ -34,6 +34,11 @@
 	width: 80vw;
 }
 
+.badge.rounded-pill {
+	font-size: 0.6em;
+	min-width: 32px;
+}
+
 /* Spinner Racket */
 /* 1. The Container */
   .navan-spinner-container {

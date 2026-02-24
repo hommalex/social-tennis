@@ -164,6 +164,11 @@ const TabGames = {
             if (!p.previous5ratio || !Array.isArray(p.previous5ratio)) return 0;
             return p.previous5ratio.reduce((partialSum, a) => partialSum + a, 0);
         };
+		
+		const displayScore = (p) => {
+            if (!p) return "0.0";
+            return getScore(p).toFixed(1); // Rounds to 1 decimal place
+        };
 
         const handleSwap = (rIdx, gIdx, pairKey, pKey) => {
             if (!swapSource.value) {
@@ -390,7 +395,8 @@ const TabGames = {
             conflictMsg,
 			hasFinishedGames,
 			viewMode,
-            filteredGames
+            filteredGames,
+			displayScore
         };
     },
     template: `
@@ -493,13 +499,15 @@ const TabGames = {
                                                         <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p1.id)}"> 
                                                             <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button>  
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+															<span class="badge rounded-pill bg-secondary">{{displayScore(game.pairA.p1)}}</span>
                                                             <span class="text-truncate">{{ game.pairA.p1.name }}</span>
                                                         </span> 
                                                         <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"> 
                                                             <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+															<span class="badge rounded-pill bg-secondary">{{ displayScore(game.pairA.p2) }}</span>
                                                             <span class="text-truncate">{{ game.pairA.p2.name }}</span>
                                                         </span>
                                                     </div>
@@ -513,13 +521,15 @@ const TabGames = {
                                                             <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
-                                                            <span class="text-truncate">{{ game.pairB.p1.name }}</span>
+                                                            <span class="badge rounded-pill bg-secondary">{{ displayScore(game.pairB.p1) }}</span>
+															<span class="text-truncate">{{ game.pairB.p1.name }}</span>
                                                         </span> 
                                                         <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"> 
                                                             <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
-                                                            <span class="text-truncate">{{ game.pairB.p2.name }}</span>
+                                                            <span class="badge rounded-pill bg-secondary">{{ displayScore(game.pairB.p2) }}</span>
+															<span class="text-truncate">{{ game.pairB.p2.name }}</span>
                                                         </span>
                                                     </div>
                                                     <div class="text-end mt-2 flex-shrink-0">
@@ -537,6 +547,7 @@ const TabGames = {
                                         <span class="ms-2 badge border border-dark text-truncate d-inline-flex align-items-center" style="max-width: 150px;" :class="activePlayerIds.has(p.id) ? 'bg-success' : 'bg-warning text-dark'">
                                             <i v-if="activePlayerIds.has(p.id)" class="bi bi-activity me-1"></i>
                                             <i v-else class="bi bi-hourglass-split me-1"></i> 
+											<span class="badge rounded-pill bg-secondary">({{ displayScore(p) }})</span>
                                             <span class="text-truncate">{{ p.name }}</span>
                                         </span>
                                     </span>
