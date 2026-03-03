@@ -165,9 +165,35 @@ const TabGames = {
             return p.previous5ratio.reduce((partialSum, a) => partialSum + a, 0);
         };
 		
-		const displayScore = (p) => {
-            if (!p) return "0.0";
-            return getScore(p).toFixed(1); // Rounds to 1 decimal place
+        const playerTiers = computed(() => {
+            const tiers = {};
+            if (!props.selected || props.selected.length === 0) return tiers;
+
+            // Sort players from highest to lowest score
+            const sorted = [...props.selected].sort((a, b) => getScore(b) - getScore(a));
+            const total = sorted.length;
+
+            // Divide into 3 equal groups
+            sorted.forEach((p, index) => {
+                const group = Math.floor((index / total) * 3); // Results in 0, 1, or 2
+                if (group === 0) tiers[p.id] = 'high';
+                else if (group === 1) tiers[p.id] = 'mid';
+                else tiers[p.id] = 'low';
+            });
+
+            return tiers;
+        });
+
+        // --- NEW: Get Battery Icon Data ---
+        const getBatteryData = (player) => {
+            if (!player) return { icon: 'bi-battery', color: 'text-secondary', title: 'N/A' };
+            
+            const tier = playerTiers.value[player.id] || 'low';
+            const score = getScore(player).toFixed(1);
+            
+            if (tier === 'high') return { icon: 'bi-battery-full', color: 'text-success', title: `Top Tier (${score})` };
+            if (tier === 'mid') return { icon: 'bi-battery-half', color: 'text-info', title: `Mid Tier (${score})` };
+            return { icon: 'bi-battery', color: 'text-secondary', title: `Lower Tier (${score})` };
         };
 
         const handleSwap = (rIdx, gIdx, pairKey, pKey) => {
@@ -396,7 +422,7 @@ const TabGames = {
 			hasFinishedGames,
 			viewMode,
             filteredGames,
-			displayScore
+			getBatteryData
         };
     },
     template: `
@@ -500,14 +526,14 @@ const TabGames = {
                                                             <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
-															<span class="badge rounded-pill bg-secondary">{{displayScore(game.pairA.p1)}}</span>
+															<i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairA.p1).icon, getBatteryData(game.pairA.p1).color]" :title="getBatteryData(game.pairA.p1).title"></i>
                                                             <span class="text-truncate">{{ game.pairA.p1.name }}</span>
                                                         </span> 
                                                         <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"> 
                                                             <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
-															<span class="badge rounded-pill bg-secondary">{{ displayScore(game.pairA.p2) }}</span>
+															<i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairA.p2).icon, getBatteryData(game.pairA.p2).color]" :title="getBatteryData(game.pairA.p2).title"></i>
                                                             <span class="text-truncate">{{ game.pairA.p2.name }}</span>
                                                         </span>
                                                     </div>
@@ -521,14 +547,14 @@ const TabGames = {
                                                             <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
-                                                            <span class="badge rounded-pill bg-secondary">{{ displayScore(game.pairB.p1) }}</span>
+                                                            <i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairB.p1).icon, getBatteryData(game.pairB.p1).color]" :title="getBatteryData(game.pairB.p1).title"></i>
 															<span class="text-truncate">{{ game.pairB.p1.name }}</span>
                                                         </span> 
                                                         <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"> 
                                                             <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                             <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
-                                                            <span class="badge rounded-pill bg-secondary">{{ displayScore(game.pairB.p2) }}</span>
+                                                            <i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairB.p2).icon, getBatteryData(game.pairB.p2).color]" :title="getBatteryData(game.pairB.p2).title"></i>
 															<span class="text-truncate">{{ game.pairB.p2.name }}</span>
                                                         </span>
                                                     </div>
@@ -547,7 +573,7 @@ const TabGames = {
                                         <span class="ms-2 badge border border-dark text-truncate d-inline-flex align-items-center" style="max-width: 150px;" :class="activePlayerIds.has(p.id) ? 'bg-success' : 'bg-warning text-dark'">
                                             <i v-if="activePlayerIds.has(p.id)" class="bi bi-activity me-1"></i>
                                             <i v-else class="bi bi-hourglass-split me-1"></i> 
-											<span class="badge rounded-pill bg-secondary">({{ displayScore(p) }})</span>
+											<i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(p).icon, getBatteryData(p).color]" :title="getBatteryData(p).title"></i>
                                             <span class="text-truncate">{{ p.name }}</span>
                                         </span>
                                     </span>
