@@ -155,8 +155,8 @@ const TabSelection = {
             const generateHashId = () => Math.random().toString(36).slice(2, 14);
 
             let ratio = [];
-            if (newPlayerLevel.value === 'A') ratio = [1, 1, 1, 1, 1];
-            else if (newPlayerLevel.value === 'C') ratio = [5, 5, 5, 5, 5];
+            if (newPlayerLevel.value === 'C') ratio = [1, 1, 1, 1, 1];
+            else if (newPlayerLevel.value === 'A') ratio = [5, 5, 5, 5, 5];
             else ratio = [2.5,2.5,2.5,2.5,2.5];
 
             const newPlayer = {
