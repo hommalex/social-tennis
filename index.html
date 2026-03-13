@@ -103,6 +103,7 @@
 						@update-games="saveGames"
 						@substitute-player="handleSubstitutePlayer"
 						@finalize-session="handleFinalizeSession"
+						@delete-player="handleDeletePlayer"
                     ></component>
                 </transition>
             </div>
@@ -310,6 +311,23 @@
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
                 await syncToCloud();
             };
+			
+			const handleDeletePlayer = async (playerId) => {
+                // 1. Remove from Master Database
+                jsonData.value.players = jsonData.value.players.filter(p => p.id !== playerId);
+                
+                // 2. Remove from Active Selection (if they were selected)
+                selectedPlayers.value = selectedPlayers.value.filter(p => p.id !== playerId);
+                
+                // 3. Remove from Current List IDs
+                if (jsonData.value.current && jsonData.value.current.list) {
+                    jsonData.value.current.list = jsonData.value.current.list.filter(id => id !== playerId);
+                }
+
+                // 4. Save to Cloud
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                await syncToCloud();
+            };
 
 			const handleSubstitutePlayer = async ({ oldId, newPlayer }) => {
 				// 1. Update Selected List
@@ -420,6 +438,7 @@
                 fetchData,
 				handleSubstitutePlayer,
 				handleFinalizeSession,
+				handleDeletePlayer,
                 isLoading,
 				saveGames,
 				modalState,

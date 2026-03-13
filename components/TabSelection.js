@@ -1,6 +1,6 @@
 const TabSelection = {
     props: ['data', 'selected', 'dialog'],
-    emits: ['update-selected', 'save-new-player', 'edit-player', 'substitute-player', 'finalize-session'],
+	emits: ['update-selected', 'save-new-player', 'edit-player', 'substitute-player', 'finalize-session', 'delete-player'],
     setup(props, { emit }) {
         const { ref, computed } = Vue; 
         
@@ -135,6 +135,18 @@ const TabSelection = {
                 gender: editGender.value
             });
             cancelEdit();
+        };
+		
+		const deletePlayer = async (id) => {
+            const confirmed = await props.dialog.confirm(
+                'Permanently Delete Player',
+                'Are you sure you want to permanently delete this player from the database? This cannot be undone.'
+            );
+            
+            if (confirmed) {
+                emit('delete-player', id);
+                cancelEdit();
+            }
         };
 
         // --- Switch Initiator ---
@@ -281,7 +293,8 @@ const TabSelection = {
             saveEdit,
             switchingPlayer,
             cancelSwitch,
-			lastAddedId
+			lastAddedId,
+			deletePlayer
         };
     },
     template: `
@@ -408,9 +421,12 @@ const TabSelection = {
                                 </div>
                                 <div class="col-4 text-end">
                                     <div class="btn-group">
-                                        <button class="btn btn-sm btn-success me-1" @click="saveEdit"><i class="bi bi-check"></i></button>
-                                        <button class="btn btn-sm btn-secondary" @click="cancelEdit"><i class="bi bi-x"></i></button>
+                                        <button class="btn btn-sm btn-success" title="Save" @click="saveEdit"><i class="bi bi-check"></i></button>
+                                        <button class="btn btn-sm btn-secondary" title="Cancel" @click="cancelEdit"><i class="bi bi-x"></i></button>
                                     </div>
+                                    <button class="btn btn-sm btn-danger ms-1" title="Permanently Delete" @click="deletePlayer(editingId)">
+                                        <i class="bi bi-trash-fill"></i>
+                                    </button>
                                 </div>
                             </div>
                     </li>
