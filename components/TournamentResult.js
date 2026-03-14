@@ -90,7 +90,7 @@ const TournamentResult = {
                         <h5 class="mb-0">{{ team.name }}</h5>
                     </div>
                     <div class="text-end">
-                        <span class="badge bg-dark text-white me-1">{{ team.wins }}W / {{ team.played }}P</span>
+                        <span class="badge bg-secondary text-dark me-1">{{ team.wins }}W / {{ team.played }}P</span>
                         <span class="badge bg-dark text-white fs-6">{{ team.totalScore }} pts</span>
                     </div>
                 </div>

@@ -271,7 +271,7 @@ const TournamentGames = {
         };
 
         const getTeamBadgeClass = (color) => {
-            if (color === 'warning') return 'bg-warning text-dark';
+            if (color === 'secondary') return 'bg-secondary text-dark';
             return `bg-${color || 'primary'} text-white`;
         };
 
