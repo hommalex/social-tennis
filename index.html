@@ -115,7 +115,7 @@
                 </a>
             </div>
             <div class="d-flex">
-                <button class="btn btn-sm btn-outline-light" @click="infoModal = true">
+                <button class="btn btn-sm btn-outline-light" v-if="appMode === 'social'" @click="infoModal = true">
                     <i class="bi bi-info-circle"></i> Information
                 </button>
             </div>
@@ -168,13 +168,14 @@
                         @delete-player="handleDeletePlayer"
                         @update-tournament-teams="saveTournamentTeams"
                         @update-tournament-games="saveTournamentGames"
+                        @update-tournament-ghosts="saveTournamentGhosts"
+                        @regen-games="handleRegenGames"
                     ></component>
 
                 </transition>
             </div>
         </div>
     </div>
-</div>
 	
 	<div class="footer">
 		@{{ thisYear }} - Navan Tennis Club
@@ -495,6 +496,15 @@
                             }
                         });
                     }
+                    // Warn user that teams/matches may need to be regenerated
+                    const hasTeams = (jsonData.value.tournament?.teams || []).length > 0;
+                    const hasGames = (jsonData.value.tournament?.games || []).length > 0;
+                    if (hasTeams || hasGames) {
+                        dialog.alert('Heads Up',
+                            'Player substituted. Team balance and match pairings were based on the original player rankings. ' +
+                            'Go to the Teams tab to regenerate teams, and the Matches tab to regenerate matches if needed.'
+                        );
+                    }
                 }
 
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
@@ -511,6 +521,7 @@
                     jsonData.value.tournament.games = [];
                     jsonData.value.tournament.list = [];
                     jsonData.value.tournament.teams = [];
+                    jsonData.value.tournament.ghosts = [];
                     tournamentSelectedPlayers.value = [];
                 }
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
@@ -549,11 +560,24 @@
                 await syncToCloud();
             };
 
+            const saveTournamentGhosts = async (ghosts) => {
+                if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [], ghosts: [] };
+                jsonData.value.tournament.ghosts = ghosts;
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                await syncToCloud();
+            };
+
             const saveTournamentGames = async (games) => {
                 if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
                 jsonData.value.tournament.games = games;
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
                 await syncToCloud();
+            };
+
+            const handleRegenGames = () => {
+                if (!jsonData.value.tournament) return;
+                // Clear games so TournamentGames watcher triggers auto-regeneration
+                jsonData.value.tournament.games = [];
             };
 
             onMounted(() => {
@@ -569,7 +593,7 @@
                 handleEditPlayer, fetchData,
                 handleSubstitutePlayer, handleFinalizeSession, handleDeletePlayer,
                 isLoading, saveGames,
-                saveTournamentTeams, saveTournamentGames,
+                saveTournamentTeams, saveTournamentGhosts, saveTournamentGames, handleRegenGames,
                 modalState, resolveModal, dialog,
                 thisYear
             };

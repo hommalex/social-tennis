@@ -20,7 +20,10 @@ const TournamentGames = {
         };
 
         const teams = computed(() => props.data?.tournament?.teams || []);
-        const allPlayers = computed(() => props.data?.players || []);
+        const allPlayers = computed(() => [
+            ...(props.data?.players || []),
+            ...(props.data?.tournament?.ghosts || [])
+        ]);
 
         const getPlayer = (id) => allPlayers.value.find(p => p.id === id);
         const getTeam = (id) => teams.value.find(t => t.id === id);
@@ -53,10 +56,10 @@ const TournamentGames = {
                     if (viewMode.value === 'active' && game.status === 'in_play') {
                         include = true;
                     } else if (viewMode.value === 'queue' && game.status === 'awaiting') {
-                        const anyBusy = [game.pairA.p1, game.pairA.p2, game.pairB.p1, game.pairB.p2]
-                            .filter(Boolean)
-                            .some(p => activePlayerIds.value.has(p.id));
-                        if (!anyBusy) include = true;
+                        // Show ALL awaiting games across all rounds — in a tournament the same
+                        // players repeat each round, so a per-player busy check would hide
+                        // future-round games whenever round 1 is in progress.
+                        include = true;
                     }
                     if (include) {
                         list.push({ ...game, roundNum: round.roundNumber, originalRIdx: rIdx, originalGIdx: gIdx });
@@ -264,7 +267,7 @@ const TournamentGames = {
         const getHeaderClass = (status) => {
             if (status === 'in_play') return 'bg-success text-white';
             if (status === 'finished') return 'bg-dark text-white';
-            return 'bg-secondary text-white';
+            return 'bg-secondary';
         };
 
         const getTeamBadgeClass = (color) => {
@@ -283,6 +286,8 @@ const TournamentGames = {
             return `border-left: 5px solid ${color} !important; border-color: ${color} !important`;
         };
 
+        const hasMounted = ref(false);
+
         const loadExisting = () => {
             const games = props.data?.tournament?.games;
             if (Array.isArray(games) && games.length > 0) {
@@ -291,8 +296,23 @@ const TournamentGames = {
             }
         };
 
-        watch(() => props.data, loadExisting, { deep: true });
-        onMounted(loadExisting);
+        // Watch for game changes: load updates or auto-regen if cleared externally (player swap)
+        watch(() => props.data?.tournament?.games, (newGames) => {
+            if (!hasMounted.value) return;
+            if (Array.isArray(newGames) && newGames.length === 0 && generatedRounds.value.length > 0 && teams.value.length > 0) {
+                // Games were reset externally — auto-regenerate with updated teams
+                generatedRounds.value = [];
+                generateSchedule();
+            } else if (Array.isArray(newGames) && newGames.length > 0) {
+                generatedRounds.value = newGames;
+                calculateActivePlayers();
+            }
+        });
+
+        onMounted(() => {
+            loadExisting();
+            hasMounted.value = true;
+        });
 
         return {
             teams, generatedRounds, errorMsg, showRound, viewMode,
