@@ -14,6 +14,9 @@
     <script src="./components/TabSelection.js"></script>
     <script src="./components/TabGames.js"></script>
     <script src="./components/TabResult.js"></script>
+    <script src="./components/TournamentTeams.js"></script>
+    <script src="./components/TournamentGames.js"></script>
+    <script src="./components/TournamentResult.js"></script>
 
 </head>
 <body>
@@ -67,14 +70,54 @@
 	
     </div>
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <!-- Side Menu Backdrop -->
+    <div v-if="sideMenuOpen" class="side-menu-backdrop" @click="sideMenuOpen = false"></div>
+
+    <!-- Side Menu Panel -->
+    <div class="side-menu" :class="{ open: sideMenuOpen }">
+        <div class="p-3 bg-primary text-white d-flex justify-content-between align-items-center">
+            <strong><i class="bi bi-grid-3x3-gap me-2"></i>NTC Events</strong>
+            <button class="btn btn-sm btn-close btn-close-white" @click="sideMenuOpen = false"></button>
+        </div>
+        <div class="p-3 d-grid gap-3">
+            <button class="btn btn-lg text-start px-3"
+                    :class="appMode === 'social' ? 'btn-primary' : 'btn-outline-primary'"
+                    @click="switchMode('social')">
+                <i class="bi bi-calendar-week fs-4 me-3"></i>
+                <span>
+                    <strong class="d-block">Social Tuesday</strong>
+                    <small class="text-muted" style="font-size:0.75rem">Individual event</small>
+                </span>
+            </button>
+            <button class="btn btn-lg text-start px-3"
+                    :class="appMode === 'tournament' ? 'btn-success' : 'btn-outline-success'"
+                    @click="switchMode('tournament')">
+                <i class="bi bi-trophy fs-4 me-3"></i>
+                <span>
+                    <strong class="d-block">Team Tournament</strong>
+                    <small class="text-muted" style="font-size:0.75rem">Team event · 3 rounds</small>
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4"
+         :class="appMode === 'social' ? 'bg-primary' : 'bg-success'">
         <div class="container-fluid">
-            <a class="navbar-brand" href="#">
-				<img src="./assets/images/NavanLogo.png" style="height: 32px" alt="logo" />
-				NTC Social Tennis
-			</a>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-sm btn-outline-light me-2" @click="sideMenuOpen = true">
+                    <i class="bi bi-grid-3x3-gap"></i>
+                </button>
+                <a class="navbar-brand mb-0" href="#">
+                    <img src="./assets/images/NavanLogo.png" style="height: 32px" alt="logo" />
+                    <span v-if="appMode === 'social'">NTC Social Tennis</span>
+                    <span v-else>NTC Team Tournament</span>
+                </a>
+            </div>
             <div class="d-flex">
-                <button class="btn btn-sm btn-outline-light" @click="infoModal = true"> <i class="bi bi-info-circle"></i> Information</button>
+                <button class="btn btn-sm btn-outline-light" @click="infoModal = true">
+                    <i class="bi bi-info-circle"></i> Information
+                </button>
             </div>
         </div>
     </nav>
@@ -82,33 +125,56 @@
     <div class="container">
         <ul class="nav nav-tabs mb-4">
             <li class="nav-item" v-for="(tab, index) in tabs" :key="index">
-                <a class="nav-link" :class="{ active: currentTab === tab.component }" href="#" @click.prevent="currentTab = tab.component">
+                <a class="nav-link"
+                   :class="[{ active: currentTab === tab.component }, appMode === 'tournament' ? 'text-success' : '']"
+                   href="#" @click.prevent="currentTab = tab.component">
                     {{ tab.name }}
                 </a>
             </li>
         </ul>
 
-        <div class="card border-primary mb-3">
+        <div class="card mb-3" :class="appMode === 'social' ? 'border-primary' : 'border-success'">
             <div class="card-body">
                 <transition name="fade" mode="out-in">
-	
-                    <component 
-                        :is="currentTab" 
+
+                    <!-- Social Tuesday Components -->
+                    <component v-if="appMode === 'social'"
+                        :key="'social-' + currentTab"
+                        :is="currentTab"
                         :data="jsonData"
-                        :selected="selectedPlayers"
-						:dialog="dialog"
+                        :selected="socialSelectedPlayers"
+                        :dialog="dialog"
                         @update-selected="updateSelectedPlayers"
                         @save-new-player="saveNewPlayer"
-						@edit-player="handleEditPlayer"
-						@update-games="saveGames"
-						@substitute-player="handleSubstitutePlayer"
-						@finalize-session="handleFinalizeSession"
-						@delete-player="handleDeletePlayer"
+                        @edit-player="handleEditPlayer"
+                        @update-games="saveGames"
+                        @substitute-player="handleSubstitutePlayer"
+                        @finalize-session="handleFinalizeSession"
+                        @delete-player="handleDeletePlayer"
                     ></component>
+
+                    <!-- Tournament Components -->
+                    <component v-else
+                        :key="'tournament-' + currentTab"
+                        :is="currentTab"
+                        :data="tournamentData"
+                        :selected="tournamentSelectedPlayers"
+                        :dialog="dialog"
+                        @update-selected="updateSelectedPlayers"
+                        @save-new-player="saveNewPlayer"
+                        @edit-player="handleEditPlayer"
+                        @substitute-player="handleSubstitutePlayer"
+                        @finalize-session="handleFinalizeSession"
+                        @delete-player="handleDeletePlayer"
+                        @update-tournament-teams="saveTournamentTeams"
+                        @update-tournament-games="saveTournamentGames"
+                    ></component>
+
                 </transition>
             </div>
         </div>
     </div>
+</div>
 	
 	<div class="footer">
 		@{{ thisYear }} - Navan Tennis Club
@@ -149,13 +215,10 @@
 </div>
 
 <script>
-// git add .
-// git commit -m "small fix 5"
-// git push -u origin main
     const { createApp, ref, computed, reactive, onMounted } = Vue;
 
     const JSONBIN_CONFIG = {
-        binId: '6970c321d0ea881f407a7bab', 
+        binId: '6970c321d0ea881f407a7bab',
         apiKey: '$2a$10$8czTg3UoYIs/26B9Scbo3OkkGrZz4ZZwfrNUl./r65HzhLfzw2YU2'
     };
 
@@ -163,38 +226,76 @@
         components: {
             'tab-selection': TabSelection,
             'tab-games': TabGames,
-            'tab-result': TabResult
+            'tab-result': TabResult,
+            'tournament-teams': TournamentTeams,
+            'tournament-games': TournamentGames,
+            'tournament-result': TournamentResult
         },
         setup() {
+            const appMode = ref('social'); // 'social' | 'tournament'
+            const sideMenuOpen = ref(false);
             const currentTab = ref('tab-selection');
             const isLoading = ref(false);
             const infoModal = ref(false);
-            
+
             const jsonData = ref({
                 last_update: "",
                 current: { numOfRounds: 3, list: [], games: [] },
-                players: [] 
+                tournament: { list: [], teams: [], games: [] },
+                players: []
             });
-			
-			const thisYear = new Date().getFullYear();
 
-            const selectedPlayers = ref([]);
+            const thisYear = new Date().getFullYear();
 
-            const tabs = [
+            const socialSelectedPlayers = ref([]);
+            const tournamentSelectedPlayers = ref([]);
+
+            const socialTabs = [
                 { name: 'Players', component: 'tab-selection' },
                 { name: 'Matches', component: 'tab-games' },
                 { name: 'Result', component: 'tab-result' }
             ];
-			
-			// --- MODAL LOGIC ---
+
+            const tournamentTabs = [
+                { name: 'Players', component: 'tab-selection' },
+                { name: 'Teams', component: 'tournament-teams' },
+                { name: 'Matches', component: 'tournament-games' },
+                { name: 'Result', component: 'tournament-result' }
+            ];
+
+            const tabs = computed(() => appMode.value === 'social' ? socialTabs : tournamentTabs);
+
+            // For tournament mode: expose tournament.games as current.games so TabSelection
+            // active-player detection works correctly
+            const tournamentData = computed(() => {
+                const t = jsonData.value.tournament || { list: [], teams: [], games: [] };
+                return {
+                    ...jsonData.value,
+                    current: {
+                        games: t.games || [],
+                        list: t.list || [],
+                        numOfRounds: 3,
+                        gamesPerMatch: 7
+                    },
+                    tournament: t
+                };
+            });
+
+            const switchMode = (mode) => {
+                appMode.value = mode;
+                currentTab.value = 'tab-selection';
+                sideMenuOpen.value = false;
+            };
+
+            // --- MODAL LOGIC ---
             const modalState = reactive({
                 show: false,
                 title: '',
                 message: '',
-                type: 'alert', // 'alert' or 'confirm'
+                type: 'alert',
                 resolve: null
             });
-			// The function we pass to children
+
             const dialog = {
                 alert: (title, message) => {
                     return new Promise((resolve) => {
@@ -232,14 +333,24 @@
                         headers: { 'X-Master-Key': JSONBIN_CONFIG.apiKey }
                     });
                     const result = await response.json();
-                    jsonData.value = result.record; 
-                    
-                    // We check if jsonData.current.list has IDs, and find the matching objects in jsonData.players
-                    if (jsonData.value.current && Array.isArray(jsonData.value.current.list)) {
-                         const currentIds = jsonData.value.current.list;
-                         selectedPlayers.value = jsonData.value.players.filter(p => currentIds.includes(p.id));
+                    jsonData.value = result.record;
+
+                    // Ensure tournament structure exists
+                    if (!jsonData.value.tournament) {
+                        jsonData.value.tournament = { list: [], teams: [], games: [] };
                     }
 
+                    // Populate social selected players
+                    if (jsonData.value.current && Array.isArray(jsonData.value.current.list)) {
+                        const currentIds = jsonData.value.current.list;
+                        socialSelectedPlayers.value = jsonData.value.players.filter(p => currentIds.includes(p.id));
+                    }
+
+                    // Populate tournament selected players
+                    if (jsonData.value.tournament && Array.isArray(jsonData.value.tournament.list)) {
+                        const tIds = jsonData.value.tournament.list;
+                        tournamentSelectedPlayers.value = jsonData.value.players.filter(p => tIds.includes(p.id));
+                    }
                 } catch (error) {
                     console.error("Error fetching data:", error);
                     alert("Error loading data from JSONBin.");
@@ -255,12 +366,18 @@
             };
 
             const updateSelectedPlayers = async (newList) => {
-                selectedPlayers.value = newList;
-                jsonData.value.current.list = newList.map(p => p.id);
+                if (appMode.value === 'social') {
+                    socialSelectedPlayers.value = newList;
+                    jsonData.value.current.list = newList.map(p => p.id);
+                } else {
+                    tournamentSelectedPlayers.value = newList;
+                    if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
+                    jsonData.value.tournament.list = newList.map(p => p.id);
+                }
                 await syncToCloud();
             };
-			
-			const handleEditPlayer = async (updatedInfo) => {
+
+            const handleEditPlayer = async (updatedInfo) => {
                 // 1. Update Master List
                 const playerIndex = jsonData.value.players.findIndex(p => p.id === updatedInfo.id);
                 if (playerIndex !== -1) {
@@ -268,130 +385,138 @@
                     jsonData.value.players[playerIndex].gender = updatedInfo.gender;
                 }
 
-                // 2. Update Selected List
-                const selectedIndex = selectedPlayers.value.findIndex(p => p.id === updatedInfo.id);
-                if (selectedIndex !== -1) {
-                    selectedPlayers.value[selectedIndex].name = updatedInfo.name;
-                    selectedPlayers.value[selectedIndex].gender = updatedInfo.gender;
-                }
+                // 2. Update both selected lists
+                [socialSelectedPlayers.value, tournamentSelectedPlayers.value].forEach(list => {
+                    const idx = list.findIndex(p => p.id === updatedInfo.id);
+                    if (idx !== -1) {
+                        list[idx].name = updatedInfo.name;
+                        list[idx].gender = updatedInfo.gender;
+                    }
+                });
 
-                // 3. DEEP UPDATE: Update Active Schedule (The fix for the Game Tab)
+                // 3. Deep update social games
                 if (jsonData.value.current && jsonData.value.current.games) {
                     jsonData.value.current.games.forEach(round => {
-                        // Update Players in Games
                         if (round.games) {
                             round.games.forEach(game => {
-                                // Helper to update a specific player object
-                                const updateObj = (p) => {
-                                    if (p && p.id === updatedInfo.id) {
-                                        p.name = updatedInfo.name;
-                                        p.gender = updatedInfo.gender;
-                                    }
-                                };
-                                
-                                updateObj(game.pairA.p1);
-                                updateObj(game.pairA.p2);
-                                updateObj(game.pairB.p1);
-                                updateObj(game.pairB.p2);
+                                const u = (p) => { if (p && p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; } };
+                                u(game.pairA.p1); u(game.pairA.p2); u(game.pairB.p1); u(game.pairB.p2);
                             });
                         }
-                        // Update Sitting Out Players
                         if (round.sitOuts) {
-                            round.sitOuts.forEach(p => {
-                                if (p.id === updatedInfo.id) {
-                                    p.name = updatedInfo.name;
-                                    p.gender = updatedInfo.gender;
-                                }
+                            round.sitOuts.forEach(p => { if (p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; } });
+                        }
+                    });
+                }
+
+                // 4. Deep update tournament games
+                if (jsonData.value.tournament && jsonData.value.tournament.games) {
+                    jsonData.value.tournament.games.forEach(round => {
+                        if (round.games) {
+                            round.games.forEach(game => {
+                                const u = (p) => { if (p && p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; } };
+                                u(game.pairA.p1); u(game.pairA.p2); u(game.pairB.p1); u(game.pairB.p2);
                             });
                         }
                     });
                 }
-                
-                // 4. Save to Cloud
+
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
                 await syncToCloud();
             };
-			
-			const handleDeletePlayer = async (playerId) => {
-                // 1. Remove from Master Database
+
+            const handleDeletePlayer = async (playerId) => {
                 jsonData.value.players = jsonData.value.players.filter(p => p.id !== playerId);
-                
-                // 2. Remove from Active Selection (if they were selected)
-                selectedPlayers.value = selectedPlayers.value.filter(p => p.id !== playerId);
-                
-                // 3. Remove from Current List IDs
-                if (jsonData.value.current && jsonData.value.current.list) {
+                socialSelectedPlayers.value = socialSelectedPlayers.value.filter(p => p.id !== playerId);
+                tournamentSelectedPlayers.value = tournamentSelectedPlayers.value.filter(p => p.id !== playerId);
+
+                if (jsonData.value.current?.list) {
                     jsonData.value.current.list = jsonData.value.current.list.filter(id => id !== playerId);
                 }
+                if (jsonData.value.tournament?.list) {
+                    jsonData.value.tournament.list = jsonData.value.tournament.list.filter(id => id !== playerId);
+                }
+                if (jsonData.value.tournament?.teams) {
+                    jsonData.value.tournament.teams.forEach(team => {
+                        if (team.players) team.players = team.players.filter(id => id !== playerId);
+                    });
+                }
 
-                // 4. Save to Cloud
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
                 await syncToCloud();
             };
 
-			const handleSubstitutePlayer = async ({ oldId, newPlayer }) => {
-				// 1. Update Selected List
-				const selIndex = selectedPlayers.value.findIndex(p => p.id === oldId);
-				if (selIndex !== -1) {
-					selectedPlayers.value[selIndex] = newPlayer;
-				}
+            const handleSubstitutePlayer = async ({ oldId, newPlayer }) => {
+                if (appMode.value === 'social') {
+                    const selIndex = socialSelectedPlayers.value.findIndex(p => p.id === oldId);
+                    if (selIndex !== -1) socialSelectedPlayers.value[selIndex] = newPlayer;
 
-				// 2. Update Current List IDs
-				if(jsonData.value.current && jsonData.value.current.list) {
-					const listIndex = jsonData.value.current.list.indexOf(oldId);
-					if(listIndex !== -1) {
-						jsonData.value.current.list[listIndex] = newPlayer.id;
-					}
-				}
+                    if (jsonData.value.current?.list) {
+                        const listIndex = jsonData.value.current.list.indexOf(oldId);
+                        if (listIndex !== -1) jsonData.value.current.list[listIndex] = newPlayer.id;
+                    }
+                    if (jsonData.value.current?.games) {
+                        jsonData.value.current.games.forEach(round => {
+                            if (round.games) {
+                                round.games.forEach(game => {
+                                    const cr = (pair) => { if (pair.p1?.id === oldId) pair.p1 = newPlayer; if (pair.p2?.id === oldId) pair.p2 = newPlayer; };
+                                    cr(game.pairA); cr(game.pairB);
+                                });
+                            }
+                            if (round.sitOuts) {
+                                const si = round.sitOuts.findIndex(p => p.id === oldId);
+                                if (si !== -1) round.sitOuts[si] = newPlayer;
+                            }
+                        });
+                    }
+                } else {
+                    const tIdx = tournamentSelectedPlayers.value.findIndex(p => p.id === oldId);
+                    if (tIdx !== -1) tournamentSelectedPlayers.value[tIdx] = newPlayer;
 
-				// 3. DEEP UPDATE: Replace in Games/Rounds
-				// We must loop through Rounds -> Games -> PairA/PairB -> p1/p2
-				if (jsonData.value.current && jsonData.value.current.games) {
-					jsonData.value.current.games.forEach(round => {
-						// Check Games
-						if (round.games) {
-							round.games.forEach(game => {
-								// Helper to check and replace in a pair
-								const checkAndReplace = (pair) => {
-									if (pair.p1 && pair.p1.id === oldId) pair.p1 = newPlayer;
-									if (pair.p2 && pair.p2.id === oldId) pair.p2 = newPlayer;
-									// Recalculate strength (optional, but good practice)
-									// Note: We'd need the getScore logic here to be precise, 
-									// but updating the object is the critical part.
-								};
-								checkAndReplace(game.pairA);
-								checkAndReplace(game.pairB);
-							});
-						}
-						// Check Sit Outs
-						if (round.sitOuts) {
-							const sitIndex = round.sitOuts.findIndex(p => p.id === oldId);
-							if (sitIndex !== -1) {
-								round.sitOuts[sitIndex] = newPlayer;
-							}
-						}
-					});
-				}
+                    if (jsonData.value.tournament?.list) {
+                        const idx = jsonData.value.tournament.list.indexOf(oldId);
+                        if (idx !== -1) jsonData.value.tournament.list[idx] = newPlayer.id;
+                    }
+                    if (jsonData.value.tournament?.teams) {
+                        jsonData.value.tournament.teams.forEach(team => {
+                            if (team.players) {
+                                const idx = team.players.indexOf(oldId);
+                                if (idx !== -1) team.players[idx] = newPlayer.id;
+                            }
+                        });
+                    }
+                    if (jsonData.value.tournament?.games) {
+                        jsonData.value.tournament.games.forEach(round => {
+                            if (round.games) {
+                                round.games.forEach(game => {
+                                    const cr = (pair) => { if (pair.p1?.id === oldId) pair.p1 = newPlayer; if (pair.p2?.id === oldId) pair.p2 = newPlayer; };
+                                    cr(game.pairA); cr(game.pairB);
+                                });
+                            }
+                        });
+                    }
+                }
 
-				// 4. Save
-				jsonData.value.last_update = new Date().toISOString().split('T')[0];
-				await syncToCloud();
-			};
-			
-			const handleFinalizeSession = async () => {
-                // 1. Clear Active Games Schedule
-                jsonData.value.current.games = [];
-                jsonData.value.current.list = []; // Clear ID list
-                
-                // 2. Clear Local Selection
-                selectedPlayers.value = [];
-
-                // 3. Save to Cloud (This saves the cleared games AND the updated player ratios)
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
                 await syncToCloud();
             };
 
-            // Helper to save current jsonData state to cloud
+            const handleFinalizeSession = async () => {
+                if (appMode.value === 'social') {
+                    jsonData.value.current.games = [];
+                    jsonData.value.current.list = [];
+                    socialSelectedPlayers.value = [];
+                } else {
+                    if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
+                    jsonData.value.tournament.games = [];
+                    jsonData.value.tournament.list = [];
+                    jsonData.value.tournament.teams = [];
+                    tournamentSelectedPlayers.value = [];
+                }
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                await syncToCloud();
+            };
+
             const syncToCloud = async () => {
                 isLoading.value = true;
                 try {
@@ -410,41 +535,43 @@
                     isLoading.value = false;
                 }
             };
-			
-			const saveGames = async (newSchedule) => {
-				// 1. Update Local State
-				jsonData.value.current.games = newSchedule;
-				
-				// 2. Update timestamp
-				jsonData.value.last_update = new Date().toISOString().split('T')[0];
 
-				// 3. Sync to Cloud
-				await syncToCloud();
-			};
+            const saveGames = async (newSchedule) => {
+                jsonData.value.current.games = newSchedule;
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                await syncToCloud();
+            };
+
+            const saveTournamentTeams = async (teams) => {
+                if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
+                jsonData.value.tournament.teams = teams;
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                await syncToCloud();
+            };
+
+            const saveTournamentGames = async (games) => {
+                if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
+                jsonData.value.tournament.games = games;
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                await syncToCloud();
+            };
 
             onMounted(() => {
                 fetchData();
             });
 
             return {
-                currentTab,
-				infoModal,
-                tabs,
-                jsonData,
-                selectedPlayers,
-                updateSelectedPlayers,
-                saveNewPlayer,
-				handleEditPlayer,
-                fetchData,
-				handleSubstitutePlayer,
-				handleFinalizeSession,
-				handleDeletePlayer,
-                isLoading,
-				saveGames,
-				modalState,
-                resolveModal,
-                dialog,
-				thisYear
+                appMode, sideMenuOpen, switchMode,
+                currentTab, infoModal, tabs,
+                jsonData, tournamentData,
+                socialSelectedPlayers, tournamentSelectedPlayers,
+                updateSelectedPlayers, saveNewPlayer,
+                handleEditPlayer, fetchData,
+                handleSubstitutePlayer, handleFinalizeSession, handleDeletePlayer,
+                isLoading, saveGames,
+                saveTournamentTeams, saveTournamentGames,
+                modalState, resolveModal, dialog,
+                thisYear
             };
         }
     }).mount('#app');
