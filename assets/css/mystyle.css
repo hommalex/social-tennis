@@ -80,3 +80,41 @@
 	padding: 60px 0;
 	text-align: center;
 }
+
+/* Side Menu (Offcanvas) */
+.side-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1040;
+}
+.side-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100%;
+    background: white;
+    z-index: 1045;
+    transform: translateX(-110%);
+    transition: transform 0.3s ease;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.side-menu.open {
+    transform: translateX(0);
+}
+
+/* Tournament team cards */
+.team-drop-target {
+    border: 2px dashed #0dcaf0 !important;
+    cursor: pointer;
+}
+.team-drop-target:hover {
+    background-color: #e8f8ff;
+}
+.cursor-pointer {
+    cursor: pointer;
+}
