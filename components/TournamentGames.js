@@ -267,7 +267,7 @@ const TournamentGames = {
         const getHeaderClass = (status) => {
             if (status === 'in_play') return 'bg-success text-white';
             if (status === 'finished') return 'bg-dark text-white';
-            return 'bg-secondary';
+            return 'bg-secondary text-dark';
         };
 
         const getTeamBadgeClass = (color) => {
