@@ -353,6 +353,7 @@ const TournamentTeams = {
                                                class="bi bi-arrow-left-right ms-auto flex-shrink-0 small text-danger"></i>
                                         </template>
                                         <template v-else>
+                                            <i class="bi bi-arrow-left-right text-success me-1 flex-shrink-0" title="Click to swap"></i>
                                             <i v-if="getPlayer(playerId).gender === 'Female'"
                                                class="bi bi-gender-female text-danger me-1 flex-shrink-0"></i>
                                             <i v-else class="bi bi-gender-male text-primary me-1 flex-shrink-0"></i>
