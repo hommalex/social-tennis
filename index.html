@@ -70,6 +70,14 @@
 	
     </div>
 
+    <!-- Bottom Saving Indicator -->
+    <div v-if="isSaving" class="saving-bar">
+        <div class="saving-bar-inner">
+            <div class="spinner-border spinner-border-sm text-white me-2" role="status"></div>
+            <span>Saving...</span>
+        </div>
+    </div>
+
     <!-- Side Menu Backdrop -->
     <div v-if="sideMenuOpen" class="side-menu-backdrop" @click="sideMenuOpen = false"></div>
 
@@ -237,7 +245,35 @@
             const sideMenuOpen = ref(false);
             const currentTab = ref('tab-selection');
             const isLoading = ref(false);
+            const isSaving = ref(false);
             const infoModal = ref(false);
+
+            // --- Save Queue ---
+            const saveQueue = [];
+            let isProcessingQueue = false;
+
+            const processSaveQueue = async () => {
+                if (isProcessingQueue) return;
+                isProcessingQueue = true;
+                isSaving.value = true;
+
+                while (saveQueue.length > 0) {
+                    const task = saveQueue.shift();
+                    try {
+                        await task();
+                    } catch (error) {
+                        console.error("Error in save queue:", error);
+                    }
+                }
+
+                isSaving.value = false;
+                isProcessingQueue = false;
+            };
+
+            const enqueueSave = (fn) => {
+                saveQueue.push(fn);
+                processSaveQueue();
+            };
 
             const jsonData = ref({
                 last_update: "",
@@ -363,7 +399,7 @@
             const saveNewPlayer = async (newPlayerObj) => {
                 jsonData.value.players.push(newPlayerObj);
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const updateSelectedPlayers = async (newList) => {
@@ -375,7 +411,7 @@
                     if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
                     jsonData.value.tournament.list = newList.map(p => p.id);
                 }
-                await syncToCloud();
+                syncToCloud();
             };
 
             const handleEditPlayer = async (updatedInfo) => {
@@ -384,6 +420,7 @@
                 if (playerIndex !== -1) {
                     jsonData.value.players[playerIndex].name = updatedInfo.name;
                     jsonData.value.players[playerIndex].gender = updatedInfo.gender;
+                    if (updatedInfo.level) jsonData.value.players[playerIndex].level = updatedInfo.level;
                 }
 
                 // 2. Update both selected lists
@@ -392,6 +429,7 @@
                     if (idx !== -1) {
                         list[idx].name = updatedInfo.name;
                         list[idx].gender = updatedInfo.gender;
+                        if (updatedInfo.level) list[idx].level = updatedInfo.level;
                     }
                 });
 
@@ -423,7 +461,7 @@
                 }
 
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const handleDeletePlayer = async (playerId) => {
@@ -444,7 +482,7 @@
                 }
 
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const handleSubstitutePlayer = async ({ oldId, newPlayer }) => {
@@ -508,7 +546,7 @@
                 }
 
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const handleFinalizeSession = async () => {
@@ -525,53 +563,53 @@
                     tournamentSelectedPlayers.value = [];
                 }
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
-            const syncToCloud = async () => {
-                isLoading.value = true;
-                try {
-                    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Master-Key': JSONBIN_CONFIG.apiKey
-                        },
-                        body: JSON.stringify(jsonData.value)
-                    });
-                } catch (error) {
-                    console.error("Error saving data:", error);
-                    alert("Failed to save to cloud.");
-                } finally {
-                    isLoading.value = false;
-                }
+            const syncToCloud = () => {
+                const dataSnapshot = JSON.stringify(jsonData.value);
+                enqueueSave(async () => {
+                    try {
+                        await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Master-Key': JSONBIN_CONFIG.apiKey
+                            },
+                            body: dataSnapshot
+                        });
+                    } catch (error) {
+                        console.error("Error saving data:", error);
+                        alert("Failed to save to cloud.");
+                    }
+                });
             };
 
             const saveGames = async (newSchedule) => {
                 jsonData.value.current.games = newSchedule;
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const saveTournamentTeams = async (teams) => {
                 if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
                 jsonData.value.tournament.teams = teams;
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const saveTournamentGhosts = async (ghosts) => {
                 if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [], ghosts: [] };
                 jsonData.value.tournament.ghosts = ghosts;
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const saveTournamentGames = async (games) => {
                 if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
                 jsonData.value.tournament.games = games;
                 jsonData.value.last_update = new Date().toISOString().split('T')[0];
-                await syncToCloud();
+                syncToCloud();
             };
 
             const handleRegenGames = () => {
@@ -592,7 +630,7 @@
                 updateSelectedPlayers, saveNewPlayer,
                 handleEditPlayer, fetchData,
                 handleSubstitutePlayer, handleFinalizeSession, handleDeletePlayer,
-                isLoading, saveGames,
+                isLoading, isSaving, saveGames,
                 saveTournamentTeams, saveTournamentGhosts, saveTournamentGames, handleRegenGames,
                 modalState, resolveModal, dialog,
                 thisYear

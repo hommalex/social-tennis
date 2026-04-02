@@ -16,6 +16,7 @@ const TabSelection = {
         const editingId = ref(null);
         const editName = ref("");
         const editGender = ref("");
+        const editLevel = ref("");
 
         // --- Switching State ---
         const switchingPlayer = ref(null);
@@ -36,11 +37,14 @@ const TabSelection = {
             if (!props.data || !props.data.players) return [];
 
             const query = searchQuery.value.toLowerCase();
-            return props.data.players.filter(p => 
-                p.name.toLowerCase().includes(query) && 
-                !props.selected.some(sel => sel.id === p.id)
+            return props.data.players.filter(p =>
+                p.name.toLowerCase().includes(query)
             );
         });
+
+        const isAlreadySelected = (playerId) => {
+            return props.selected.some(sel => sel.id === playerId);
+        };
 
         // 1. SELECT LOGIC (Handles both Add and Switch)
         const selectPlayer = async (player) => {
@@ -115,12 +119,14 @@ const TabSelection = {
             editingId.value = player.id;
             editName.value = player.name;
             editGender.value = player.gender || 'Male';
+            editLevel.value = player.level || 'B';
         };
-        
+
         const cancelEdit = () => {
             editingId.value = null;
             editName.value = "";
             editGender.value = "";
+            editLevel.value = "";
         };
         
         const saveEdit = () => {
@@ -132,7 +138,8 @@ const TabSelection = {
             emit('edit-player', {
                 id: editingId.value,
                 name: editName.value,
-                gender: editGender.value
+                gender: editGender.value,
+                level: editLevel.value
             });
             cancelEdit();
         };
@@ -283,6 +290,7 @@ const TabSelection = {
             editingId,
             editName,
             editGender,
+            editLevel,
             selectPlayer,
             removePlayer,
             createPlayer,
@@ -294,7 +302,8 @@ const TabSelection = {
             switchingPlayer,
             cancelSwitch,
 			lastAddedId,
-			deletePlayer
+			deletePlayer,
+			isAlreadySelected
         };
     },
     template: `
@@ -336,14 +345,19 @@ const TabSelection = {
                 </div>
 
                 <ul class="list-group autocomplete-list" v-if="showDropdown && filteredPlayers.length > 0">
-                    <li 
-                        v-for="player in filteredPlayers" 
-                        :key="player.id" 
+                    <li
+                        v-for="player in filteredPlayers"
+                        :key="player.id"
                         class="list-group-item autocomplete-item d-flex justify-content-between align-items-center"
-                        @click="selectPlayer(player)"
+                        :class="{ 'list-group-item-danger': isAlreadySelected(player.id) && !switchingPlayer }"
+                        :style="isAlreadySelected(player.id) && !switchingPlayer ? 'cursor: default;' : ''"
+                        @click="!(isAlreadySelected(player.id) && !switchingPlayer) && selectPlayer(player)"
                     >
                         {{ player.name }}
-                        <span class="badge rounded-pill" :class="switchingPlayer ? 'bg-warning text-dark' : 'bg-secondary'">
+                        <span v-if="isAlreadySelected(player.id) && !switchingPlayer" class="badge rounded-pill bg-success">
+                            Already Added
+                        </span>
+                        <span v-else class="badge rounded-pill" :class="switchingPlayer ? 'bg-warning text-dark' : 'bg-secondary'">
                             {{ switchingPlayer ? 'Switch' : 'Select' }}
                         </span>
                     </li>
@@ -394,6 +408,9 @@ const TabSelection = {
                             <div class="d-flex align-items-center text-truncate me-2" :title="p.name">
                                 <i v-if="p.gender === 'Female'" class="bi bi-gender-female text-danger me-2"></i>
                                 <i v-else class="bi bi-gender-male text-primary me-2"></i>
+                                <i v-if="p.level === 'A'" class="bi bi-battery-full text-success me-2" title="Class A"></i>
+                                <i v-else-if="p.level === 'C'" class="bi bi-battery text-secondary me-2" title="Class C"></i>
+                                <i v-else class="bi bi-battery-half text-info me-2" title="Class B"></i>
                                 {{ p.name }}
                             </div>
 
@@ -419,7 +436,14 @@ const TabSelection = {
                                         <option value="Female">Female</option>
                                     </select>
                                 </div>
-                                <div class="col-4 text-end">
+                                <div class="col-4">
+                                    <select class="form-select form-select-sm" v-model="editLevel">
+                                        <option value="A">Class A</option>
+                                        <option value="B">Class B</option>
+                                        <option value="C">Class C</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 text-end">
                                     <div class="btn-group">
                                         <button class="btn btn-sm btn-success" title="Save" @click="saveEdit"><i class="bi bi-check"></i></button>
                                         <button class="btn btn-sm btn-secondary" title="Cancel" @click="cancelEdit"><i class="bi bi-x"></i></button>

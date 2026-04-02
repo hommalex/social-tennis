@@ -74,7 +74,27 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  
+
+  /* Bottom Saving Bar */
+  .saving-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 9998;
+    pointer-events: none;
+  }
+  .saving-bar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
  /* FOOTER */
 .footer{
 	padding: 60px 0;

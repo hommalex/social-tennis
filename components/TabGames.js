@@ -313,45 +313,147 @@ const TabGames = {
         const generateSchedule = () => {
             const error = validate();
             if (error) { errorMsg.value = error; return; }
-            errorMsg.value = ""; 
+            errorMsg.value = "";
 
             if (!props.data.current) props.data.current = {};
             props.data.current.numOfRounds = config.numRounds;
             props.data.current.gamesPerMatch = config.gamesPerMatch;
 
             const schedule = [];
-            const players = [...props.selected]; 
-            const history = {}; 
-            players.forEach(p => history[p.id] = new Set());
+            const players = [...props.selected];
+            const pairHistory = {};  // tracks partner pairs across rounds
+            const gameHistory = {};  // tracks who was in the same game (all 4 players)
+            players.forEach(p => {
+                pairHistory[p.id] = new Set();
+                gameHistory[p.id] = new Set();
+            });
+
+            // Helpers
+            const shuffle = (arr) => {
+                for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                return arr;
+            };
+
+            const pairKey = (id1, id2) => [id1, id2].sort().join('_');
+
+            // Split players into tiers by score
+            const sorted = [...players].sort((a, b) => getScore(b) - getScore(a));
+            const third = Math.ceil(sorted.length / 3);
+            const tierMap = {};
+            sorted.forEach((p, i) => {
+                if (i < third) tierMap[p.id] = 'high';
+                else if (i < third * 2) tierMap[p.id] = 'mid';
+                else tierMap[p.id] = 'low';
+            });
+
+            // Separate by gender
+            const males = players.filter(p => p.gender !== 'Female');
+            const females = players.filter(p => p.gender === 'Female');
 
             for (let r = 1; r <= config.numRounds; r++) {
                 let roundGames = [];
-                let availablePlayers = [...players].sort((a, b) => getScore(b) - getScore(a));
                 let roundPairs = [];
 
-                // Step A: Create Pairs
-                while (availablePlayers.length >= 2) {
-                    const p1 = availablePlayers.shift(); 
-                    let bestPartnerIndex = -1;
-                    for (let i = availablePlayers.length - 1; i >= 0; i--) {
-                        const candidate = availablePlayers[i];
-                        if (history[p1.id].has(candidate.id)) continue; 
-                        bestPartnerIndex = i;
-                        if (p1.gender !== candidate.gender) break; 
+                // Shuffle within gender groups each round for variety
+                const shuffledMales = shuffle([...males]);
+                const shuffledFemales = shuffle([...females]);
+
+                // Step A: Create mixed-gender pairs (1M + 1F) first
+                const pairedIds = new Set();
+                const malePool = [...shuffledMales];
+                const femalePool = [...shuffledFemales];
+
+                // Score a potential pair: lower is better
+                const scorePair = (p1, p2) => {
+                    let score = 0;
+                    // Penalty if already partnered before
+                    if (pairHistory[p1.id].has(p2.id)) score += 1000;
+                    // Penalty if were in same game before (less severe)
+                    if (gameHistory[p1.id].has(p2.id)) score += 50;
+                    // Level balance: prefer high+low or mid+mid
+                    const t1 = tierMap[p1.id], t2 = tierMap[p2.id];
+                    if (t1 === 'high' && t2 === 'low') score -= 10;
+                    else if (t1 === 'low' && t2 === 'high') score -= 10;
+                    else if (t1 === 'mid' && t2 === 'mid') score -= 8;
+                    else if (t1 === t2) score += 20; // same tier (high+high or low+low) is bad
+                    return score;
+                };
+
+                // For each male, find best female partner
+                while (malePool.length > 0 && femalePool.length > 0) {
+                    const p1 = malePool.shift();
+                    let bestIdx = 0;
+                    let bestScore = Infinity;
+                    for (let i = 0; i < femalePool.length; i++) {
+                        const s = scorePair(p1, femalePool[i]);
+                        if (s < bestScore) { bestScore = s; bestIdx = i; }
                     }
-                    if (bestPartnerIndex === -1) bestPartnerIndex = availablePlayers.length - 1;
-                    const p2 = availablePlayers.splice(bestPartnerIndex, 1)[0];
-                    history[p1.id].add(p2.id);
-                    history[p2.id].add(p1.id);
+                    const p2 = femalePool.splice(bestIdx, 1)[0];
+                    pairedIds.add(p1.id);
+                    pairedIds.add(p2.id);
                     roundPairs.push({ p1, p2, strength: getScore(p1) + getScore(p2) });
                 }
 
-                // Step B: Create Matches
-                roundPairs.sort((a, b) => b.strength - a.strength);
+                // Step B: Pair remaining same-gender players
+                const remaining = shuffle([...malePool, ...femalePool]);
+                while (remaining.length >= 2) {
+                    const p1 = remaining.shift();
+                    let bestIdx = 0;
+                    let bestScore = Infinity;
+                    for (let i = 0; i < remaining.length; i++) {
+                        const s = scorePair(p1, remaining[i]);
+                        if (s < bestScore) { bestScore = s; bestIdx = i; }
+                    }
+                    const p2 = remaining.splice(bestIdx, 1)[0];
+                    roundPairs.push({ p1, p2, strength: getScore(p1) + getScore(p2) });
+                }
+
+                // Record pair history
+                roundPairs.forEach(pair => {
+                    pairHistory[pair.p1.id].add(pair.p2.id);
+                    pairHistory[pair.p2.id].add(pair.p1.id);
+                });
+
+                // Step C: Match pairs into games — balance strength + avoid repeat game groups
+                // Score a potential match: lower is better
+                const scoreMatch = (pA, pB) => {
+                    let score = 0;
+                    // Strength balance: closer combined strengths = better
+                    score += Math.abs(pA.strength - pB.strength) * 5;
+                    // Penalty for players who were in the same game before
+                    const allPlayers = [pA.p1, pA.p2, pB.p1, pB.p2];
+                    for (let i = 0; i < allPlayers.length; i++) {
+                        for (let j = i + 1; j < allPlayers.length; j++) {
+                            if (gameHistory[allPlayers[i].id].has(allPlayers[j].id)) score += 100;
+                        }
+                    }
+                    return score;
+                };
+
+                shuffle(roundPairs); // shuffle before matching for variety
 
                 while (roundPairs.length >= 2) {
                     const pairA = roundPairs.shift();
-                    const pairB = roundPairs.shift(); 
+                    let bestIdx = 0;
+                    let bestScore = Infinity;
+                    for (let i = 0; i < roundPairs.length; i++) {
+                        const s = scoreMatch(pairA, roundPairs[i]);
+                        if (s < bestScore) { bestScore = s; bestIdx = i; }
+                    }
+                    const pairB = roundPairs.splice(bestIdx, 1)[0];
+
+                    // Record game history (all 4 players met each other)
+                    const gamePlayers = [pairA.p1, pairA.p2, pairB.p1, pairB.p2];
+                    for (let i = 0; i < gamePlayers.length; i++) {
+                        for (let j = i + 1; j < gamePlayers.length; j++) {
+                            gameHistory[gamePlayers[i].id].add(gamePlayers[j].id);
+                            gameHistory[gamePlayers[j].id].add(gamePlayers[i].id);
+                        }
+                    }
+
                     roundGames.push({
                         id: Math.random().toString(36).substr(2, 9),
                         type: 'doubles',
@@ -363,12 +465,14 @@ const TabGames = {
                     });
                 }
 
-                // Step C: Handle Leftover Pair (Singles)
+                // Step D: Handle Leftover Pair (Singles)
                 if (roundPairs.length > 0) {
-                    const leftover = roundPairs.shift(); // This pair becomes opponents
+                    const leftover = roundPairs.shift();
+                    gameHistory[leftover.p1.id].add(leftover.p2.id);
+                    gameHistory[leftover.p2.id].add(leftover.p1.id);
                     roundGames.push({
                         id: Math.random().toString(36).substr(2, 9),
-                        type: 'singles', // Mark as singles
+                        type: 'singles',
                         pairA: { p1: leftover.p1, p2: null, strength: getScore(leftover.p1) },
                         pairB: { p1: leftover.p2, p2: null, strength: getScore(leftover.p2) },
                         status: 'awaiting',
@@ -377,11 +481,10 @@ const TabGames = {
                     });
                 }
 
-                // Sitouts is now always empty if even number validation passes
                 schedule.push({ roundNumber: r, games: roundGames, sitOuts: [] });
             }
             generatedRounds.value = schedule;
-            calculateActivePlayers(); 
+            calculateActivePlayers();
             checkConflicts();
             emit('update-games', schedule);
         };
