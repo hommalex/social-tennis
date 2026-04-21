@@ -25,9 +25,10 @@ const TabGames = {
         });
 
         // Swap & Conflict State
-        const swapSource = ref(null); 
-        const conflictedPlayerIds = ref(new Set()); 
+        const swapSource = ref(null);
+        const conflictedPlayerIds = ref(new Set());
         const conflictMsg = ref("");
+        const repeatedOpponentIds = ref(new Set());
 
         const calculateActivePlayers = () => {
             const currentActive = new Set();
@@ -144,6 +145,48 @@ const TabGames = {
             conflictedPlayerIds.value = conflicts;
         };
 
+        const checkRepeatedGames = () => {
+            const gameHistory = {};
+            const repeated = new Set();
+
+            if (!generatedRounds.value) return;
+
+            generatedRounds.value.forEach(round => {
+                if (!round.games) return;
+                round.games.forEach(game => {
+                    const players = [game.pairA.p1, game.pairA.p2, game.pairB.p1, game.pairB.p2].filter(Boolean);
+                    for (let i = 0; i < players.length; i++) {
+                        for (let j = i + 1; j < players.length; j++) {
+                            const key = [players[i].id, players[j].id].sort().join('_');
+                            if (!gameHistory[key]) gameHistory[key] = 0;
+                            gameHistory[key]++;
+                        }
+                    }
+                });
+            });
+
+            for (const [key, count] of Object.entries(gameHistory)) {
+                if (count > 1) {
+                    const ids = key.split('_');
+                    repeated.add(ids[0]);
+                    repeated.add(ids[1]);
+                }
+            }
+
+            repeatedOpponentIds.value = repeated;
+        };
+
+        const getPlayerNameClass = (id) => {
+            if (conflictedPlayerIds.value.has(id)) return 'text-danger fw-bold';
+            return 'fw-bold';
+        };
+
+        const getPlayerStyle = (id) => {
+            if (!conflictedPlayerIds.value.has(id) && repeatedOpponentIds.value.has(id))
+                return { color: '#fd7e14' };
+            return {};
+        };
+
         const loadExistingGames = () => {
             if (props.data && props.data.current) {
                 if (props.data.current.gamesPerMatch) config.gamesPerMatch = props.data.current.gamesPerMatch;
@@ -152,7 +195,8 @@ const TabGames = {
                 if (Array.isArray(props.data.current.games) && props.data.current.games.length > 0) {
                     generatedRounds.value = props.data.current.games;
                     calculateActivePlayers();
-                    checkConflicts(); 
+                    checkConflicts();
+                    checkRepeatedGames();
                 }
             }
         };
@@ -242,7 +286,8 @@ const TabGames = {
             updateStrength(target.gIdx, target.pairKey);
 
             swapSource.value = null;
-            checkConflicts(); 
+            checkConflicts();
+            checkRepeatedGames();
             calculateActivePlayers();
             emit('update-games', generatedRounds.value);
         };
@@ -486,8 +531,12 @@ const TabGames = {
             generatedRounds.value = schedule;
             calculateActivePlayers();
             checkConflicts();
+            checkRepeatedGames();
+            showGuide.value = true;
             emit('update-games', schedule);
         };
+
+        const showGuide = ref(false);
 
         const resetGames = async () => {
 			const confirmed = await props.dialog.confirm(
@@ -522,10 +571,14 @@ const TabGames = {
             saveScore,
             conflictedPlayerIds,
             conflictMsg,
+            repeatedOpponentIds,
+            getPlayerNameClass,
+            getPlayerStyle,
 			hasFinishedGames,
 			viewMode,
             filteredGames,
-			getBatteryData
+			getBatteryData,
+            showGuide
         };
     },
     template: `
@@ -625,17 +678,17 @@ const TabGames = {
                                             <div class="card-body p-2">
                                                 <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-5 border-primary">
                                                     <div style="min-width: 0;">
-                                                        <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p1.id)}"> 
+                                                        <span class="d-flex align-items-center mb-1 text-truncate" :class="getPlayerNameClass(game.pairA.p1.id)" :style="getPlayerStyle(game.pairA.p1.id)">
                                                             <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button>
 															<i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairA.p1).icon, getBatteryData(game.pairA.p1).color]" :title="getBatteryData(game.pairA.p1).title"></i>
                                                             <span class="text-truncate">{{ game.pairA.p1.name }}</span>
-                                                        </span> 
-                                                        <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"> 
+                                                        </span>
+                                                        <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="getPlayerNameClass(game.pairA.p2.id)" :style="getPlayerStyle(game.pairA.p2.id)">
                                                             <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairA' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairA', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button>
 															<i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairA.p2).icon, getBatteryData(game.pairA.p2).color]" :title="getBatteryData(game.pairA.p2).title"></i>
                                                             <span class="text-truncate">{{ game.pairA.p2.name }}</span>
                                                         </span>
@@ -646,17 +699,17 @@ const TabGames = {
                                                 </div>
                                                 <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
                                                     <div style="min-width: 0;">
-                                                        <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p1.id)}"> 
+                                                        <span class="d-flex align-items-center mb-1 text-truncate" :class="getPlayerNameClass(game.pairB.p1.id)" :style="getPlayerStyle(game.pairB.p1.id)">
                                                             <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p1' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p1')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button>
                                                             <i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairB.p1).icon, getBatteryData(game.pairB.p1).color]" :title="getBatteryData(game.pairB.p1).title"></i>
 															<span class="text-truncate">{{ game.pairB.p1.name }}</span>
-                                                        </span> 
-                                                        <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"> 
+                                                        </span>
+                                                        <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="getPlayerNameClass(game.pairB.p2.id)" :style="getPlayerStyle(game.pairB.p2.id)">
                                                             <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                             <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
-                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button> 
+                                                            <button type="button" class="btn btn-sm me-1 p-0 px-1 flex-shrink-0" :class="swapSource && swapSource.pKey === 'p2' && swapSource.pairKey === 'pairB' && swapSource.gIdx === gIdx ? 'btn-warning' : 'btn-outline-secondary'" @click.stop="handleSwap(rIdx, gIdx, 'pairB', 'p2')"><i class="bi bi-arrow-left-right" style="font-size:0.8rem"></i></button>
                                                             <i class="bi me-1 flex-shrink-0" style="font-size: 1.1em;" :class="[getBatteryData(game.pairB.p2).icon, getBatteryData(game.pairB.p2).color]" :title="getBatteryData(game.pairB.p2).title"></i>
 															<span class="text-truncate">{{ game.pairB.p2.name }}</span>
                                                         </span>
@@ -704,12 +757,12 @@ const TabGames = {
                                     <div class="card-body p-2">
                                         <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-5 border-primary">
                                             <div style="min-width: 0;">
-                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p1.id)}"> 
+                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="getPlayerNameClass(game.pairA.p1.id)" :style="getPlayerStyle(game.pairA.p1.id)">
                                                     <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairA.p1.name }}</span>
-                                                </span> 
-                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairA.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairA.p2.id)}"> 
+                                                </span>
+                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="getPlayerNameClass(game.pairA.p2.id)" :style="getPlayerStyle(game.pairA.p2.id)">
                                                     <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairA.p2.name }}</span>
@@ -721,12 +774,12 @@ const TabGames = {
                                         </div>
                                         <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
                                             <div style="min-width: 0;">
-                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p1.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p1.id)}"> 
+                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="getPlayerNameClass(game.pairB.p1.id)" :style="getPlayerStyle(game.pairB.p1.id)">
                                                     <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairB.p1.name }}</span>
-                                                </span> 
-                                                <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="{'text-danger fw-bold': conflictedPlayerIds.has(game.pairB.p2.id), 'fw-bold': !conflictedPlayerIds.has(game.pairB.p2.id)}"> 
+                                                </span>
+                                                <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="getPlayerNameClass(game.pairB.p2.id)" :style="getPlayerStyle(game.pairB.p2.id)">
                                                     <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairB.p2.name }}</span>
@@ -744,6 +797,31 @@ const TabGames = {
             </div>
         </div>
 		<p v-if="hasFinishedGames" class="text-secondary"> Reset is disabled once a match has been finalised. </p>
+
+        <div v-if="showGuide" class="modal custom-modal-backdrop" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="bi bi-info-circle-fill me-2"></i>How to use the schedule</h5>
+                        <button type="button" class="btn-close btn-close-white" @click="showGuide = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-3">Use the <strong><i class="bi bi-arrow-left-right"></i> swap button</strong> next to any player's name to swap them with another player in the same round.</p>
+                        <div class="d-flex align-items-start mb-2">
+                            <span class="fw-bold me-2" style="color: #dc3545; white-space: nowrap;">Red names</span>
+                            <span class="text-muted">— these two players are already partnered together in another round. You <strong>must</strong> swap one of them until no red names remain.</span>
+                        </div>
+                        <div class="d-flex align-items-start">
+                            <span class="fw-bold me-2" style="color: #fd7e14; white-space: nowrap;">Orange names</span>
+                            <span class="text-muted">— these players have already met in the same match (as partners or opponents) in another round. No action required, but swapping adds more variety.</span>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-primary" @click="showGuide = false">Got it</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div v-if="activeGame" class="modal custom-modal-backdrop" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
             <div class="modal-dialog modal-dialog-centered">
