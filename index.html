@@ -226,10 +226,27 @@
 <script>
     const { createApp, ref, computed, reactive, onMounted } = Vue;
 
-    const JSONBIN_CONFIG = {
+    const API_CONFIG = {
+		type: 'bin',
+		endpoint: 'https://api.jsonbin.io/v3/b/',
+		addOn: '/latest',
         binId: '6970c321d0ea881f407a7bab',
         apiKey: '$2a$10$8czTg3UoYIs/26B9Scbo3OkkGrZz4ZZwfrNUl./r65HzhLfzw2YU2'
     };
+    /*const API_CONFIG = {
+		type: 'keeper',
+		endpoint: 'https://www.jsonkeeper.com/b/GMREB',
+		addOn: '',
+        binId: '',
+        apiKey: ''
+    };
+    const API_CONFIG = {
+		type: 'npoint',
+		endpoint: 'https://api.npoint.io/12551ba002f3a3cd1f2c',
+		addOn: '',
+        binId: '',
+        apiKey: ''
+    };*/
 
     createApp({
         components: {
@@ -248,32 +265,9 @@
             const isSaving = ref(false);
             const infoModal = ref(false);
 
-            // --- Save Queue ---
-            const saveQueue = [];
-            let isProcessingQueue = false;
-
-            const processSaveQueue = async () => {
-                if (isProcessingQueue) return;
-                isProcessingQueue = true;
-                isSaving.value = true;
-
-                while (saveQueue.length > 0) {
-                    const task = saveQueue.shift();
-                    try {
-                        await task();
-                    } catch (error) {
-                        console.error("Error in save queue:", error);
-                    }
-                }
-
-                isSaving.value = false;
-                isProcessingQueue = false;
-            };
-
-            const enqueueSave = (fn) => {
-                saveQueue.push(fn);
-                processSaveQueue();
-            };
+            // --- Debounced Save ---
+            let debounceTimer = null;
+            let pendingSnapshot = null;
 
             const jsonData = ref({
                 last_update: "",
@@ -365,12 +359,18 @@
             const fetchData = async () => {
                 isLoading.value = true;
                 try {
-                    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, {
+                    const response = await fetch(`${API_CONFIG.endpoint}${API_CONFIG.binId}${API_CONFIG.addOn}`, {
                         method: 'GET',
-                        headers: { 'X-Master-Key': JSONBIN_CONFIG.apiKey }
+                        headers: { 'X-Master-Key': API_CONFIG.apiKey }
                     });
                     const result = await response.json();
-                    jsonData.value = result.record;
+
+					if (API_CONFIG.type === 'bin') {
+						jsonData.value = result.record;
+					} else {
+						jsonData.value = result
+					}
+                    
 
                     // Ensure tournament structure exists
                     if (!jsonData.value.tournament) {
@@ -567,22 +567,26 @@
             };
 
             const syncToCloud = () => {
-                const dataSnapshot = JSON.stringify(jsonData.value);
-                enqueueSave(async () => {
+                pendingSnapshot = JSON.stringify(jsonData.value);
+                isSaving.value = true;
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(async () => {
                     try {
-                        await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
+                        await fetch(`${API_CONFIG.endpoint}${API_CONFIG.binId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'X-Master-Key': JSONBIN_CONFIG.apiKey
+                                'X-Master-Key': API_CONFIG.apiKey
                             },
-                            body: dataSnapshot
+                            body: pendingSnapshot
                         });
                     } catch (error) {
                         console.error("Error saving data:", error);
                         alert("Failed to save to cloud.");
+                    } finally {
+                        isSaving.value = false;
                     }
-                });
+                }, 5000);
             };
 
             const saveGames = async (newSchedule) => {
