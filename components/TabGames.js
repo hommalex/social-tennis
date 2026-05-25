@@ -15,6 +15,7 @@ const TabGames = {
 		const viewMode = ref('rounds');
         const activePlayerIds = ref(new Set());
         const activeGame = ref(null);
+        const activePair = ref(null);
 		// Helper to get name of player currently selected for swap
         const swapSourceName = computed(() => {
             if (!swapSource.value) return "";
@@ -322,21 +323,28 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
-        const openScoreModal = (game) => {
+        const openScoreModal = (game, pair) => {
             // 1. Resolve the Real Game Object
             if (game.originalRIdx !== undefined && game.originalGIdx !== undefined) {
                 activeGame.value = generatedRounds.value[game.originalRIdx].games[game.originalGIdx];
             } else {
                 activeGame.value = game;
             }
+            activePair.value = pair;
         };
 
-        const saveScore = (scoreA) => {
+        const saveScore = (score) => {
             if (!activeGame.value) return;
-            activeGame.value.scoreA = scoreA;
-            activeGame.value.scoreB = config.gamesPerMatch - scoreA;
+            if (activePair.value === 'A') {
+                activeGame.value.scoreA = score;
+                activeGame.value.scoreB = config.gamesPerMatch - score;
+            } else {
+                activeGame.value.scoreB = score;
+                activeGame.value.scoreA = config.gamesPerMatch - score;
+            }
             activeGame.value.status = 'finished';
             activeGame.value = null;
+            activePair.value = null;
             calculateActivePlayers();
             emit('update-games', generatedRounds.value);
         };
@@ -573,7 +581,8 @@ const TabGames = {
             switchStatus,
             getHeaderClass,
             activePlayerIds,
-            activeGame, 
+            activeGame,
+            activePair,
             saveScore,
             conflictedPlayerIds,
             conflictMsg,
@@ -700,7 +709,7 @@ const TabGames = {
                                                         </span>
                                                     </div>
                                                     <div class="text-end mt-2 flex-shrink-0">
-                                                        <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreA }}</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game, 'A')">{{ game.scoreA }}</button>
                                                     </div>
                                                 </div>
                                                 <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
@@ -721,7 +730,7 @@ const TabGames = {
                                                         </span>
                                                     </div>
                                                     <div class="text-end mt-2 flex-shrink-0">
-                                                        <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreB }}</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game, 'B')">{{ game.scoreB }}</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -775,7 +784,7 @@ const TabGames = {
                                                 </span>
                                             </div>
                                             <div class="text-end mt-2 flex-shrink-0">
-                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreA }}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game, 'A')">{{ game.scoreA }}</button>
                                             </div>
                                         </div>
                                         <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
@@ -792,7 +801,7 @@ const TabGames = {
                                                 </span>
                                             </div>
                                             <div class="text-end mt-2 flex-shrink-0">
-                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game)">{{ game.scoreB }}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-lg" @click.stop="openScoreModal(game, 'B')">{{ game.scoreB }}</button>
                                             </div>
                                         </div>
                                     </div>
@@ -838,11 +847,12 @@ const TabGames = {
                     </div>
                     <div class="modal-body text-center">
                         <p class="mb-1 text-muted">Set Score for</p>
-                        <h4 class="mb-3">{{ activeGame.pairA.p1.name }} {{(activeGame.pairA.p2) ? '& ' + activeGame.pairA.p2.name : '' }}</h4>
-                        
+                        <h4 v-if="activePair === 'A'" class="mb-3">{{ activeGame.pairA.p1.name }} {{(activeGame.pairA.p2) ? '& ' + activeGame.pairA.p2.name : '' }}</h4>
+                        <h4 v-else class="mb-3">{{ activeGame.pairB.p1.name }} {{(activeGame.pairB.p2) ? '& ' + activeGame.pairB.p2.name : '' }}</h4>
+
                         <div class="d-flex flex-wrap justify-content-center gap-2">
-                            <button 
-                                v-for="i in (config.gamesPerMatch + 1)" 
+                            <button
+                                v-for="i in (config.gamesPerMatch + 1)"
                                 :key="i"
                                 class="btn btn-outline-primary btn-lg"
                                 style="width: 56px;"
@@ -851,10 +861,14 @@ const TabGames = {
                                 {{ i - 1 }}
                             </button>
                         </div>
-                        
+
                         <hr>
-                        <p class="small text-muted">
-                            Team B ({{ activeGame.pairB.p1.name }} {{ (activeGame.pairA.p2) ? '& ' + activeGame.pairB.p2.name : '' }}) 
+                        <p v-if="activePair === 'A'" class="small text-muted">
+                            {{ activeGame.pairB.p1.name }} {{ (activeGame.pairB.p2) ? '& ' + activeGame.pairB.p2.name : '' }}
+                            will automatically receive {{ config.gamesPerMatch }} minus your selection.
+                        </p>
+                        <p v-else class="small text-muted">
+                            {{ activeGame.pairA.p1.name }} {{ (activeGame.pairA.p2) ? '& ' + activeGame.pairA.p2.name : '' }}
                             will automatically receive {{ config.gamesPerMatch }} minus your selection.
                         </p>
                     </div>
