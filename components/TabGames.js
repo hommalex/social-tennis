@@ -211,25 +211,27 @@ const TabGames = {
         watch(() => props.data, loadExistingGames, { deep: true });
         onMounted(loadExistingGames);
 
+        // Map player level (A best, B mid, C lowest) to a numeric strength score.
         const getScore = (p) => {
-            if (!p.previous5ratio || !Array.isArray(p.previous5ratio)) return 0;
-            return p.previous5ratio.reduce((partialSum, a) => partialSum + a, 0);
+            if (!p) return 2;
+            if (p.level === 'A') return 3;
+            if (p.level === 'C') return 1;
+            return 2; // 'B' or unset
         };
-		
+
+        // Map a player level directly to a tier.
+        const levelToTier = (level) => {
+            if (level === 'A') return 'high';
+            if (level === 'C') return 'low';
+            return 'mid'; // 'B' or unset
+        };
+
         const playerTiers = computed(() => {
             const tiers = {};
             if (!props.selected || props.selected.length === 0) return tiers;
 
-            // Sort players from highest to lowest score
-            const sorted = [...props.selected].sort((a, b) => getScore(b) - getScore(a));
-            const total = sorted.length;
-
-            // Divide into 3 equal groups
-            sorted.forEach((p, index) => {
-                const group = Math.floor((index / total) * 3); // Results in 0, 1, or 2
-                if (group === 0) tiers[p.id] = 'high';
-                else if (group === 1) tiers[p.id] = 'mid';
-                else tiers[p.id] = 'low';
+            props.selected.forEach(p => {
+                tiers[p.id] = levelToTier(p.level);
             });
 
             return tiers;
@@ -239,12 +241,11 @@ const TabGames = {
         const getBatteryData = (player) => {
             if (!player) return { icon: 'bi-battery', color: 'text-secondary', title: 'N/A' };
             
-            const tier = playerTiers.value[player.id] || 'low';
-            const score = getScore(player).toFixed(1);
-            
-            if (tier === 'high') return { icon: 'bi-battery-full', color: 'text-success', title: `Top Tier (${score})` };
-            if (tier === 'mid') return { icon: 'bi-battery-half', color: 'text-info', title: `Mid Tier (${score})` };
-            return { icon: 'bi-battery', color: 'text-secondary', title: `Lower Tier (${score})` };
+            const level = player.level || 'B';
+
+            if (level === 'A') return { icon: 'bi-battery-full', color: 'text-success', title: 'Class A' };
+            if (level === 'C') return { icon: 'bi-battery', color: 'text-secondary', title: 'Class C' };
+            return { icon: 'bi-battery-half', color: 'text-info', title: 'Class B' };
         };
 
         const handleSwap = (rIdx, gIdx, pairKey, pKey) => {
@@ -403,14 +404,10 @@ const TabGames = {
 
             const pairKey = (id1, id2) => [id1, id2].sort().join('_');
 
-            // Split players into tiers by score
-            const sorted = [...players].sort((a, b) => getScore(b) - getScore(a));
-            const third = Math.ceil(sorted.length / 3);
+            // Split players into tiers by their level (A/B/C)
             const tierMap = {};
-            sorted.forEach((p, i) => {
-                if (i < third) tierMap[p.id] = 'high';
-                else if (i < third * 2) tierMap[p.id] = 'mid';
-                else tierMap[p.id] = 'low';
+            players.forEach(p => {
+                tierMap[p.id] = levelToTier(p.level);
             });
 
             // Separate by gender

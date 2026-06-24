@@ -13,9 +13,13 @@ const TournamentTeams = {
 
         const generateId = () => Math.random().toString(36).slice(2, 10);
 
+        // Map player level (A best, B mid, C lowest) to a numeric strength score.
+        // Ghost placeholders have no level and count as the weakest.
         const getScore = (p) => {
-            if (!p?.previous5ratio) return 0;
-            return p.previous5ratio.reduce((s, a) => s + a, 0);
+            if (!p || p.isGhost) return 0;
+            if (p.level === 'A') return 3;
+            if (p.level === 'C') return 1;
+            return 2; // 'B' or unset
         };
 
         const teams = computed(() => props.data?.tournament?.teams || []);
@@ -40,11 +44,8 @@ const TournamentTeams = {
         const playerTiers = computed(() => {
             const tiers = {};
             if (!props.selected?.length) return tiers;
-            const sorted = [...props.selected].sort((a, b) => getScore(b) - getScore(a));
-            const total = sorted.length;
-            sorted.forEach((p, i) => {
-                const g = Math.floor((i / total) * 3);
-                tiers[p.id] = g === 0 ? 'high' : g === 1 ? 'mid' : 'low';
+            props.selected.forEach(p => {
+                tiers[p.id] = p.level === 'A' ? 'high' : p.level === 'C' ? 'low' : 'mid';
             });
             return tiers;
         });
@@ -100,10 +101,10 @@ const TournamentTeams = {
 
             const ghosts = [];
             for (let i = 0; i < ghostMaleCount; i++) {
-                ghosts.push({ id: `ghost-m-${i}`, name: 'Ghost Player', gender: 'Male', isGhost: true, previous5ratio: [0, 0, 0, 0, 0] });
+                ghosts.push({ id: `ghost-m-${i}`, name: 'Ghost Player', gender: 'Male', isGhost: true });
             }
             for (let i = 0; i < ghostFemaleCount; i++) {
-                ghosts.push({ id: `ghost-f-${i}`, name: 'Ghost Player', gender: 'Female', isGhost: true, previous5ratio: [0, 0, 0, 0, 0] });
+                ghosts.push({ id: `ghost-f-${i}`, name: 'Ghost Player', gender: 'Female', isGhost: true });
             }
 
             const newTeams = Array.from({ length: numTeams }, (_, i) => ({

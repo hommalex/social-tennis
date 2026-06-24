@@ -14,9 +14,13 @@ const TournamentGames = {
         const scoreInputA = ref(0);
         const scoreInputB = ref(0);
 
+        // Map player level (A best, B mid, C lowest) to a numeric strength score.
+        // Ghost placeholders have no level and count as the weakest.
         const getScore = (p) => {
-            if (!p?.previous5ratio) return 0;
-            return p.previous5ratio.reduce((s, a) => s + a, 0);
+            if (!p || p.isGhost) return 0;
+            if (p.level === 'A') return 3;
+            if (p.level === 'C') return 1;
+            return 2; // 'B' or unset
         };
 
         const teams = computed(() => props.data?.tournament?.teams || []);

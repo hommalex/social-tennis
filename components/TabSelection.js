@@ -173,17 +173,11 @@ const TabSelection = {
         const createPlayer = () => {
             const generateHashId = () => Math.random().toString(36).slice(2, 14);
 
-            let ratio = [];
-            if (newPlayerLevel.value === 'C') ratio = [1, 1, 1, 1, 1];
-            else if (newPlayerLevel.value === 'A') ratio = [5, 5, 5, 5, 5];
-            else ratio = [2.5,2.5,2.5,2.5,2.5];
-
             const newPlayer = {
                 id: generateHashId(),
                 name: searchQuery.value,
                 gender: newPlayerGender.value,
-                level: newPlayerLevel.value,
-                previous5ratio: ratio
+                level: newPlayerLevel.value
             };
             
             // Always save the new player to database
@@ -223,7 +217,6 @@ const TabSelection = {
 
             // 1. Get Game Settings
             const roundsData = props.data?.current?.games || [];
-            const gamesPerMatch = props.data?.current?.gamesPerMatch || 7;
 
             // 2. Calculate Totals for the session
             const sessionScores = {};
@@ -251,30 +244,19 @@ const TabSelection = {
                 }
             });
 
-            // 3. Update Player Objects (Only for those currently selected)
-            props.selected.forEach(p => {
-                const totalScore = sessionScores[p.id] || 0;
-                const played = sessionGamesPlayed[p.id] || 0;
-                
-                // Only update ratio if they actually played at least one game
-                if (played > 0) {
-                    // Formula: (((TotalScore / ActualGamesPlayed) / GamesPerMatch) * 5)
-                    let newRatio = ((totalScore / played) / gamesPerMatch) * 5;
-                    
-                    // Safety clamp (0 to 5) and rounding
-                    if (isNaN(newRatio)) newRatio = 0;
-                    newRatio = Math.max(0, Math.min(5, newRatio)); 
-                    newRatio = parseFloat(newRatio.toFixed(3));
+            // 3. Rank players who actually played by their session score (the final table)
+            //    and split them into 3 equal groups to reassign their level.
+            //    Top third -> A, middle third -> B, bottom third -> C.
+            const ranked = props.selected
+                .filter(p => (sessionGamesPlayed[p.id] || 0) > 0)
+                .sort((a, b) => (sessionScores[b.id] || 0) - (sessionScores[a.id] || 0));
 
-                    // Update Array (FIFO)
-                    if (!p.previous5ratio) p.previous5ratio = [];
-                    p.previous5ratio.push(newRatio);
-                    
-                    // Keep only last 5
-                    if (p.previous5ratio.length > 5) {
-                        p.previous5ratio.shift(); // Remove oldest
-                    }
-                }
+            const total = ranked.length;
+            ranked.forEach((p, index) => {
+                const group = Math.floor((index / total) * 3); // Results in 0, 1, or 2
+                if (group === 0) p.level = 'A';
+                else if (group === 1) p.level = 'B';
+                else p.level = 'C';
             });
 
             // 4. Emit event to Parent to save everything and clear selection
