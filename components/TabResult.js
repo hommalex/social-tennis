@@ -20,10 +20,17 @@ const TabResult = {
 
             // 2. Loop through all rounds/games in the data
             const rounds = props.data?.current?.games || [];
-            
-            rounds.forEach(round => {
+            const totalRounds = rounds.length;
+            const maxPoints = parseInt(props.data?.current?.gamesPerMatch) || 7;
+            let maxActiveRound = 0; // highest round number that has started (any finished game)
+
+            rounds.forEach((round, rIdx) => {
                 if (!round.games) return;
-                
+
+                if (round.games.some(g => g.status === 'finished')) {
+                    maxActiveRound = Math.max(maxActiveRound, round.roundNumber || (rIdx + 1));
+                }
+
                 round.games.forEach(game => {
                     // Only count finished games
                     if (game.status === 'finished') {
@@ -45,14 +52,23 @@ const TabResult = {
                 });
             });
 
+            // Show projected max only once we've reached the round before the last round
+            const showProjection = totalRounds >= 2 && maxActiveRound >= totalRounds - 1;
+
             // 3. Convert to Array and Sort
             return props.selected.map(p => {
+                const score = scores[p.id] || 0;
+                const played = gamesPlayed[p.id] || 0;
+                const remaining = Math.max(0, totalRounds - played);
                 return {
                     id: p.id,
                     name: p.name,
                     gender: p.gender || 'Male', // Default to Male if missing
-                    score: scores[p.id] || 0,
-                    played: gamesPlayed[p.id] || 0
+                    score: score,
+                    played: played,
+                    // Max points reachable if the player wins their remaining game(s) at max points
+                    projected: score + remaining * maxPoints,
+                    showProjected: showProjection && remaining > 0
                 };
             }).sort((a, b) => {
                 if (b.score !== a.score) return b.score - a.score;
@@ -77,6 +93,7 @@ const TabResult = {
                             <th scope="col" class="text-center" style="width: 50px;">#</th>
                             <th scope="col">Player</th>
                             <th scope="col" class="text-center" style="width: 50px;"><i class="bi bi-gender-ambiguous"></i></th>
+                            <th scope="col" class="text-center" style="width: 60px;" title="Games Played"><i class="bi bi-controller"></i></th>
                             <th scope="col" class="text-center fw-bold text-warning" style="width: 80px;">Points</th>
                         </tr>
                     </thead>
@@ -97,7 +114,14 @@ const TabResult = {
                                 <i v-else class="bi bi-gender-male text-primary"></i>
                             </td>
                             
-                            <td class="text-center fw-bold fs-5">{{ player.score }}</td>
+                            <td class="text-center text-muted">{{ player.played }}</td>
+
+                            <td class="text-center fw-bold fs-5">
+                                {{ player.score }}
+                                <div v-if="player.showProjected" class="text-muted fw-normal" style="font-size: 0.6rem; line-height: 1;" title="Max possible if remaining game(s) are won at max points">
+                                    max {{ player.projected }}
+                                </div>
+                            </td>
                         </tr>
                     </tbody>
                 </table>

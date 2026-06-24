@@ -299,10 +299,10 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
-        const switchStatus = (game) => {
+        const switchStatus = async (game) => {
             // 1. Resolve the Real Game Object
             let targetGame = game;
-            
+
             // If this is a copy from the flat view (has indices), find the original
             if (game.originalRIdx !== undefined && game.originalGIdx !== undefined) {
                 targetGame = generatedRounds.value[game.originalRIdx].games[game.originalGIdx];
@@ -313,12 +313,17 @@ const TabGames = {
                 targetGame.status = 'in_play';
             } else if (targetGame.status === 'in_play') {
                 targetGame.status = 'awaiting';
-            } else if (targetGame.status === 'finished') { 
-                targetGame.status = 'awaiting'; 
-                targetGame.scoreA = 0; 
-                targetGame.scoreB = 0; 
+            } else if (targetGame.status === 'finished') {
+                const confirmed = await props.dialog.confirm(
+                    "Reset Game",
+                    "This game is finished. Are you sure you want to reset its score back to 0?"
+                );
+                if (!confirmed) return;
+                targetGame.status = 'awaiting';
+                targetGame.scoreA = 0;
+                targetGame.scoreB = 0;
             }
-            
+
             calculateActivePlayers();
             emit('update-games', generatedRounds.value);
         };
