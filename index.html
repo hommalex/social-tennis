@@ -438,12 +438,12 @@
                     jsonData.value.current.games.forEach(round => {
                         if (round.games) {
                             round.games.forEach(game => {
-                                const u = (p) => { if (p && p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; } };
+                                const u = (p) => { if (p && p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; if (updatedInfo.level) p.level = updatedInfo.level; } };
                                 u(game.pairA.p1); u(game.pairA.p2); u(game.pairB.p1); u(game.pairB.p2);
                             });
                         }
                         if (round.sitOuts) {
-                            round.sitOuts.forEach(p => { if (p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; } });
+                            round.sitOuts.forEach(p => { if (p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; if (updatedInfo.level) p.level = updatedInfo.level; } });
                         }
                     });
                 }
@@ -453,7 +453,7 @@
                     jsonData.value.tournament.games.forEach(round => {
                         if (round.games) {
                             round.games.forEach(game => {
-                                const u = (p) => { if (p && p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; } };
+                                const u = (p) => { if (p && p.id === updatedInfo.id) { p.name = updatedInfo.name; p.gender = updatedInfo.gender; if (updatedInfo.level) p.level = updatedInfo.level; } };
                                 u(game.pairA.p1); u(game.pairA.p2); u(game.pairB.p1); u(game.pairB.p2);
                             });
                         }
