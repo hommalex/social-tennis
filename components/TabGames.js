@@ -16,6 +16,8 @@ const TabGames = {
         const activePlayerIds = ref(new Set());
         const activeGame = ref(null);
         const activePair = ref(null);
+        // Game ids that were just scored — kept visible in the Active view for a grace period
+        const recentlyFinished = ref(new Set());
 		// Helper to get name of player currently selected for swap
         const swapSourceName = computed(() => {
             if (!swapSource.value) return "";
@@ -70,8 +72,8 @@ const TabGames = {
 
                         // 1. ACTIVE VIEW: Show all games currently running
                         if (viewMode.value === 'active') {
-                            if (game.status === 'in_play') include = true;
-                        } 
+                            if (game.status === 'in_play' || recentlyFinished.value.has(game.id)) include = true;
+                        }
                         // 2. QUEUE VIEW: Show awaiting games ONLY if all players are free
                         else if (viewMode.value === 'queue') {
                             if (game.status === 'awaiting') {
@@ -349,6 +351,16 @@ const TabGames = {
                 activeGame.value.scoreA = config.gamesPerMatch - score;
             }
             activeGame.value.status = 'finished';
+
+            // Keep this game visible in the Active view for 20s so the score can be double-checked
+            const finishedId = activeGame.value.id;
+            recentlyFinished.value = new Set(recentlyFinished.value).add(finishedId);
+            setTimeout(() => {
+                const next = new Set(recentlyFinished.value);
+                next.delete(finishedId);
+                recentlyFinished.value = next;
+            }, 20000);
+
             activeGame.value = null;
             activePair.value = null;
             calculateActivePlayers();
