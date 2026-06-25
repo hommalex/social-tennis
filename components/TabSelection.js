@@ -20,6 +20,25 @@ const TabSelection = {
 
         // --- Switching State ---
         const switchingPlayer = ref(null);
+
+        // --- Quick Level Popup State ---
+        const levelPopupId = ref(null);
+
+        const toggleLevelPopup = (playerId) => {
+            levelPopupId.value = levelPopupId.value === playerId ? null : playerId;
+        };
+
+        const setLevel = (player, level) => {
+            if (player.level !== level) {
+                emit('edit-player', {
+                    id: player.id,
+                    name: player.name,
+                    gender: player.gender,
+                    level: level
+                });
+            }
+            levelPopupId.value = null;
+        };
 		
 		// --- Flash State ---
         const lastAddedId = ref(null);
@@ -285,7 +304,10 @@ const TabSelection = {
             cancelSwitch,
 			lastAddedId,
 			deletePlayer,
-			isAlreadySelected
+			isAlreadySelected,
+			levelPopupId,
+			toggleLevelPopup,
+			setLevel
         };
     },
     template: `
@@ -387,13 +409,28 @@ const TabSelection = {
                         style="transition: background-color 0.5s ease;"
                     >
                         <div v-if="editingId !== p.id" class="d-flex justify-content-between align-items-center">
-                            <div class="d-flex align-items-center text-truncate me-2" :title="p.name">
+                            <div class="d-flex align-items-center me-2" style="min-width: 0;">
                                 <i v-if="p.gender === 'Female'" class="bi bi-gender-female text-danger me-2"></i>
                                 <i v-else class="bi bi-gender-male text-primary me-2"></i>
-                                <i v-if="p.level === 'A'" class="bi bi-battery-full text-success me-2" title="Class A"></i>
-                                <i v-else-if="p.level === 'C'" class="bi bi-battery text-secondary me-2" title="Class C"></i>
-                                <i v-else class="bi bi-battery-half text-info me-2" title="Class B"></i>
-                                {{ p.name }}
+                                <span class="position-relative me-2 flex-shrink-0" style="cursor: pointer;" :title="'Class ' + (p.level || 'B') + ' - click to change'" @click.stop="toggleLevelPopup(p.id)">
+                                    <i v-if="p.level === 'A'" class="bi bi-battery-full text-success" title="Class A - click to change"></i>
+                                    <i v-else-if="p.level === 'C'" class="bi bi-battery text-secondary" title="Class C - click to change"></i>
+                                    <i v-else class="bi bi-battery-half text-info" title="Class B - click to change"></i>
+
+                                    <div v-if="levelPopupId === p.id" class="level-popup-backdrop" @click.stop="levelPopupId = null"></div>
+                                    <div v-if="levelPopupId === p.id" class="level-popup card shadow-sm">
+                                        <button type="button" class="btn btn-sm text-start" :class="p.level === 'A' ? 'btn-success' : 'btn-outline-success'" @click.stop="setLevel(p, 'A')">
+                                            <i class="bi bi-battery-full"></i> Class A
+                                        </button>
+                                        <button type="button" class="btn btn-sm text-start" :class="p.level === 'B' ? 'btn-info' : 'btn-outline-info'" @click.stop="setLevel(p, 'B')">
+                                            <i class="bi bi-battery-half"></i> Class B
+                                        </button>
+                                        <button type="button" class="btn btn-sm text-start" :class="p.level === 'C' ? 'btn-secondary' : 'btn-outline-secondary'" @click.stop="setLevel(p, 'C')">
+                                            <i class="bi bi-battery"></i> Class C
+                                        </button>
+                                    </div>
+                                </span>
+                                <span class="text-truncate" :title="p.name">{{ p.name }}</span>
                             </div>
 
                             <div class="btn-group flex-shrink-0" role="group" aria-label="Player Actions">
