@@ -405,6 +405,8 @@ const TabGames = {
                 gameHistory[p.id] = new Set();
             });
 
+            const singlesUsed = new Set(); // tracks players who already played singles this session
+
             // Helpers
             const shuffle = (arr) => {
                 for (let i = arr.length - 1; i > 0; i--) {
@@ -454,6 +456,42 @@ const TabGames = {
                     else if (t1 === t2) score += 20; // same tier (high+high or low+low) is bad
                     return score;
                 };
+
+                // Pre-select 2 players for singles when player count isn't divisible by 4.
+                // Priority: unused males → unused females → any males → any females.
+                // Within the chosen pool, prefer same level then least prior contact.
+                let singlesPlayers = null;
+                if (players.length % 4 === 2) {
+                    const unusedMales   = malePool.filter(p => !singlesUsed.has(p.id));
+                    const unusedFemales = femalePool.filter(p => !singlesUsed.has(p.id));
+
+                    let candidatePool, sourcePool;
+                    if (unusedMales.length >= 2)        { candidatePool = unusedMales;   sourcePool = malePool; }
+                    else if (unusedFemales.length >= 2) { candidatePool = unusedFemales; sourcePool = femalePool; }
+                    else if (malePool.length >= 2)      { candidatePool = malePool;      sourcePool = malePool; }
+                    else if (femalePool.length >= 2)    { candidatePool = femalePool;    sourcePool = femalePool; }
+
+                    if (candidatePool && candidatePool.length >= 2) {
+                        let bestI = 0, bestJ = 1, minScore = Infinity;
+                        for (let i = 0; i < candidatePool.length; i++) {
+                            for (let j = i + 1; j < candidatePool.length; j++) {
+                                const p1 = candidatePool[i], p2 = candidatePool[j];
+                                let s = 0;
+                                if ((p1.level || 'B') !== (p2.level || 'B')) s += 1000;
+                                if (gameHistory[p1.id].has(p2.id)) s += 100;
+                                if (s < minScore) { minScore = s; bestI = i; bestJ = j; }
+                            }
+                        }
+                        const chosen1 = candidatePool[bestI];
+                        const chosen2 = candidatePool[bestJ];
+                        singlesPlayers = [chosen1, chosen2];
+                        singlesUsed.add(chosen1.id);
+                        singlesUsed.add(chosen2.id);
+                        const removeById = (arr, id) => { const i = arr.findIndex(p => p.id === id); if (i !== -1) arr.splice(i, 1); };
+                        removeById(sourcePool, chosen1.id);
+                        removeById(sourcePool, chosen2.id);
+                    }
+                }
 
                 // For each male, find best female partner
                 while (malePool.length > 0 && femalePool.length > 0) {
@@ -538,16 +576,20 @@ const TabGames = {
                     });
                 }
 
-                // Step D: Handle Leftover Pair (Singles)
-                if (roundPairs.length > 0) {
-                    const leftover = roundPairs.shift();
-                    gameHistory[leftover.p1.id].add(leftover.p2.id);
-                    gameHistory[leftover.p2.id].add(leftover.p1.id);
+                // Step D: Handle Singles Game
+                // Use pre-selected male pair if available, otherwise fall back to any leftover pair
+                const singlesPair = singlesPlayers
+                    ? { p1: singlesPlayers[0], p2: singlesPlayers[1] }
+                    : (roundPairs.length > 0 ? roundPairs.shift() : null);
+
+                if (singlesPair) {
+                    gameHistory[singlesPair.p1.id].add(singlesPair.p2.id);
+                    gameHistory[singlesPair.p2.id].add(singlesPair.p1.id);
                     roundGames.push({
                         id: Math.random().toString(36).substr(2, 9),
                         type: 'singles',
-                        pairA: { p1: leftover.p1, p2: null, strength: getScore(leftover.p1) },
-                        pairB: { p1: leftover.p2, p2: null, strength: getScore(leftover.p2) },
+                        pairA: { p1: singlesPair.p1, p2: null, strength: getScore(singlesPair.p1) },
+                        pairB: { p1: singlesPair.p2, p2: null, strength: getScore(singlesPair.p2) },
                         status: 'awaiting',
                         scoreA: 0,
                         scoreB: 0

@@ -40,6 +40,9 @@ const TabSelection = {
             levelPopupId.value = null;
         };
 		
+		// --- Level Guide Popup ---
+        const showLevelGuide = ref(false);
+
 		// --- Flash State ---
         const lastAddedId = ref(null);
 
@@ -85,9 +88,11 @@ const TabSelection = {
 					props.dialog.alert("Adding players", "The matches have already been genenrated. You need reset the matches in order for this player to included in the matches.");
 				}
 				
+                const isFirst = props.selected.length === 0;
                 const newList = [player, ...props.selected];
                 emit('update-selected', newList);
 				triggerFlash(player.id);
+                if (isFirst) showLevelGuide.value = true;
             }
             searchQuery.value = "";
             showDropdown.value = false;
@@ -216,9 +221,11 @@ const TabSelection = {
 				}
 				
                 // NORMAL ADD MODE
+                const isFirst = props.selected.length === 0;
                 const newList = [newPlayer, ...props.selected];
                 setTimeout(() => emit('update-selected', newList), 1000);
 				triggerFlash(newPlayer.id);
+                if (isFirst) showLevelGuide.value = true;
             }
             
             searchQuery.value = "";
@@ -307,7 +314,8 @@ const TabSelection = {
 			isAlreadySelected,
 			levelPopupId,
 			toggleLevelPopup,
-			setLevel
+			setLevel,
+			showLevelGuide
         };
     },
     template: `
@@ -478,6 +486,40 @@ const TabSelection = {
             <div v-else class="text-muted fst-italic mt-3">
                 No players selected yet.
             </div>
+
+        <div v-if="showLevelGuide" class="modal custom-modal-backdrop" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="bi bi-info-circle-fill me-2"></i>Pro Tip: Player Levels</h5>
+                        <button type="button" class="btn-close btn-close-white" @click="showLevelGuide = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-3">You can quickly change any player's level by tapping the <strong>battery icon</strong> next to their name.</p>
+                        <div class="text-center mb-3">
+                            <div class="d-inline-flex flex-column gap-2 p-3 border rounded bg-light" style="min-width: 160px;">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-battery-full text-success fs-5"></i>
+                                    <span><strong>Class A</strong> — Expert</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-battery-half text-info fs-5"></i>
+                                    <span><strong>Class B</strong> — Intermediate</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-battery text-secondary fs-5"></i>
+                                    <span><strong>Class C</strong> — Beginner</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-muted mb-0"><i class="bi bi-stars text-warning me-1"></i>Setting accurate levels helps generate <strong>more balanced and competitive matches</strong> when you create the schedule.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-primary" @click="showLevelGuide = false">Got it!</button>
+                    </div>
+                </div>
+            </div>
         </div>
+    </div>
     `
 };
