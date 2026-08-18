@@ -162,6 +162,27 @@ const SpondClient = (() => {
             .sort((a, b) => Date.parse(a.startTimestamp || 0) - Date.parse(b.startTimestamp || 0));
     }
 
+    /** Recently finished events, most recent first. Used for testing and re-imports. */
+    async function getPastEvents(groupId, windowDays = 120) {
+        const now = new Date();
+        const from = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+
+        const data = await call("/sponds/", {
+            params: {
+                includeComments: false,
+                addProfileInfo: true,
+                max: 50,
+                minEndTimestamp: from.toISOString(),
+                maxEndTimestamp: now.toISOString(),
+                groupId: groupId || getGroupId() || undefined,
+            },
+        });
+        const events = Array.isArray(data) ? data : (data && data.sponds) || [];
+        return events
+            .filter(e => !e.cancelled)
+            .sort((a, b) => Date.parse(b.startTimestamp || 0) - Date.parse(a.startTimestamp || 0));
+    }
+
     /**
      * Build id -> display name from every place Spond puts profile info.
      * Kept deliberately broad: the exact nesting varies by event type.
@@ -222,7 +243,7 @@ const SpondClient = (() => {
         isConfigured, hasToken, clearSession, tokenLooksExpired,
         getGroupId, setGroupId,
         login, verify2fa,
-        getGroups, getUpcomingEvents,
+        getGroups, getUpcomingEvents, getPastEvents,
         acceptedNames, eventLabel,
     };
 })();

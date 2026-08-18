@@ -352,63 +352,131 @@ const TabSelection = {
             }
         };
 
-        const chooseSpondEvent = async (event) => {
-            showSpondPicker.value = false;
-            await applySpondEvent(event);
+        // Past events: needed to test against a session that already has attendees,
+        // and to re-import one after the fact.
+        const loadPastSpondEvents = async () => {
+            spondBusy.value = true;
+            try {
+                const events = await SpondClient.getPastEvents();
+                if (!events.length) {
+                    props.dialog.alert("Nothing found", "Spond returned no recent past events.");
+                    return;
+                }
+                spondEvents.value = events;
+                showSpondPicker.value = true;
+            } catch (err) {
+                if (err instanceof SpondClient.AuthError) showSpondLogin.value = true;
+                else props.dialog.alert("Spond error", err.message || String(err));
+            } finally {
+                spondBusy.value = false;
+            }
         };
 
-        // Match Spond attendees against the player database and add them to the list.
-        const applySpondEvent = async (event) => {
-            console.log("[Spond] raw event:", event);
+        const chooseSpondEvent = (event) => {
+            showSpondPicker.value = false;
+            prepareSpondImport(event);
+        };
 
+        // --- Review step -------------------------------------------------
+        // Nothing is written until the user confirms: Spond names do not line up
+        // cleanly with the player database (shortened surnames, first-name-only
+        // rows, misspellings), so every attendee is shown as an editable proposal.
+        const showSpondReview = ref(false);
+        const spondReviewRows = ref([]);
+        const spondEventName = ref("");
+        const NEW_PLAYER = "__new__";
+
+        const playerOptions = computed(() => {
+            const list = ((props.data && props.data.players) || []).filter(p => p && p.name);
+            return list.slice().sort((a, b) => a.name.localeCompare(b.name));
+        });
+
+        const prepareSpondImport = (event) => {
+            console.log("[Spond] raw event:", event);
+            spondEventName.value = event.heading || "event";
+
+            const { names, unresolvedIds } = SpondClient.acceptedNames(event);
+            if (unresolvedIds.length) {
+                console.warn("[Spond] attendee ids with no name in payload:", unresolvedIds);
+            }
+            if (!names.length) {
+                props.dialog.alert("No attendees",
+                    "Nobody has accepted this event yet" + (unresolvedIds.length ? ", or their names were missing from the response." : "."));
+                return;
+            }
+
+            const proposals = SpondMatch.proposals(names, (props.data && props.data.players) || []);
+            const alreadyIn = new Set(props.selected.map(p => p.id));
+
+            spondReviewRows.value = proposals.map(row => ({
+                spondName: row.spondName,
+                tier: row.tier,
+                ambiguous: row.ambiguous,
+                needsLook: !SpondMatch.isConfident(row),
+                choiceId: row.player ? row.player.id : NEW_PLAYER,
+                alreadySelected: row.player ? alreadyIn.has(row.player.id) : false,
+                gender: "Male",
+                level: "B",
+                include: true,
+            }));
+            showSpondReview.value = true;
+        };
+
+        const reviewCounts = computed(() => {
+            const rows = spondReviewRows.value.filter(r => r.include);
+            return {
+                total: spondReviewRows.value.length,
+                creating: rows.filter(r => r.choiceId === NEW_PLAYER).length,
+                matched: rows.filter(r => r.choiceId !== NEW_PLAYER).length,
+                flagged: spondReviewRows.value.filter(r => r.needsLook && r.include).length,
+            };
+        });
+
+        const tierBadge = (tier) => (SpondMatch.TIER[tier] || SpondMatch.TIER.none).badge;
+        const tierLabel = (tier) => (SpondMatch.TIER[tier] || SpondMatch.TIER.none).label;
+
+        const confirmSpondImport = () => {
             if (props.data.current.games.length > 0) {
                 props.dialog.alert("Adding players",
                     "The matches have already been genenrated. You need reset the matches in order for these players to included in the matches.");
             }
 
-            const { names, unresolvedIds } = SpondClient.acceptedNames(event);
-            if (!names.length) {
-                props.dialog.alert("No attendees",
-                    "Nobody has accepted this event yet" + (unresolvedIds.length ? ", or their names were not included in the response." : "."));
-                return;
-            }
-
-            const existing = (props.data && props.data.players) || [];
-            const byName = new Map(existing.map(p => [normalizeName(p.name), p]));
             const generateHashId = () => Math.random().toString(36).slice(2, 14);
-
-            const added = [];
-            const created = [];
-            const skipped = [];
+            const players = (props.data && props.data.players) || [];
             const newList = [...props.selected];
+            const created = [];
+            let added = 0, skipped = 0;
 
-            names.forEach(fullName => {
-                let player = byName.get(normalizeName(fullName));
+            spondReviewRows.value.filter(r => r.include).forEach(row => {
+                let player;
 
-                if (!player) {
-                    player = { id: generateHashId(), name: fullName, gender: "Male", level: "B" };
-                    byName.set(normalizeName(fullName), player);
+                if (row.choiceId === NEW_PLAYER) {
+                    player = {
+                        id: generateHashId(),
+                        name: row.spondName,
+                        gender: row.gender,
+                        level: row.level,
+                    };
                     emit("save-new-player", player);
-                    created.push(fullName);
+                    created.push(player.name);
+                } else {
+                    player = players.find(p => p.id === row.choiceId);
+                    if (!player) return;
                 }
 
-                if (newList.some(p => p.id === player.id)) {
-                    skipped.push(player.name);
-                } else {
-                    newList.push(player);
-                    added.push(player.name);
-                }
+                if (newList.some(p => p.id === player.id)) { skipped++; return; }
+                newList.push(player);
+                added++;
             });
 
-            if (added.length) {
-                emit("update-selected", newList);
-                triggerFlash(added.length === 1 ? newList[newList.length - 1].id : null);
-            }
+            if (added) emit("update-selected", newList);
 
-            const lines = [`${added.length} player(s) added from "${event.heading || "event"}".`];
-            if (created.length) lines.push(`New to the database (check gender/level): ${created.join(", ")}.`);
-            if (skipped.length) lines.push(`Already in the list: ${skipped.join(", ")}.`);
-            if (unresolvedIds.length) lines.push(`${unresolvedIds.length} attendee(s) could not be named — see the browser console.`);
+            showSpondReview.value = false;
+            spondReviewRows.value = [];
+
+            const lines = [`${added} player(s) added from "${spondEventName.value}".`];
+            if (created.length) lines.push(`Created: ${created.join(", ")}.`);
+            if (skipped) lines.push(`${skipped} were already in the list.`);
             props.dialog.alert("Spond import", lines.join(" "));
         };
 
@@ -497,6 +565,16 @@ const TabSelection = {
 			doSpond2fa,
 			closeSpondLogin,
 			signOutOfSpond,
+			showSpondReview,
+			spondReviewRows,
+			spondEventName,
+			playerOptions,
+			reviewCounts,
+			tierBadge,
+			tierLabel,
+			confirmSpondImport,
+			loadPastSpondEvents,
+			NEW_PLAYER,
 			SpondClient
         };
     },
@@ -748,6 +826,76 @@ const TabSelection = {
             </div>
         </div>
 
+        <div v-if="showSpondReview" class="modal custom-modal-backdrop" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="bi bi-people-fill me-2"></i>Review import</h5>
+                        <button type="button" class="btn-close btn-close-white" @click="showSpondReview = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted">
+                            <strong>{{ spondEventName }}</strong> — {{ reviewCounts.total }} attending.
+                            <span v-if="reviewCounts.flagged" class="text-warning fw-bold">
+                                {{ reviewCounts.flagged }} need a look (highlighted).
+                            </span>
+                            <span v-else>All matched cleanly.</span>
+                        </p>
+
+                        <div v-for="(row, i) in spondReviewRows" :key="i"
+                             class="border rounded p-2 mb-2"
+                             :class="row.needsLook && row.include ? 'border-warning bg-light' : ''">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" v-model="row.include" :id="'inc'+i">
+                                    <label class="form-check-label fw-bold" :for="'inc'+i">{{ row.spondName }}</label>
+                                </div>
+                                <span class="badge" :class="'bg-' + tierBadge(row.tier)">
+                                    {{ row.ambiguous ? 'pick one' : tierLabel(row.tier) }}
+                                </span>
+                            </div>
+
+                            <div v-if="row.include" class="row g-2">
+                                <div :class="row.choiceId === NEW_PLAYER ? 'col-12 col-sm-6' : 'col-12'">
+                                    <select class="form-select form-select-sm" v-model="row.choiceId">
+                                        <option :value="NEW_PLAYER">+ Create "{{ row.spondName }}" as a new player</option>
+                                        <option v-for="p in playerOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                    </select>
+                                </div>
+                                <div v-if="row.choiceId === NEW_PLAYER" class="col-6 col-sm-3">
+                                    <select class="form-select form-select-sm" v-model="row.gender">
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                    </select>
+                                </div>
+                                <div v-if="row.choiceId === NEW_PLAYER" class="col-6 col-sm-3">
+                                    <select class="form-select form-select-sm" v-model="row.level">
+                                        <option value="A">Class A</option>
+                                        <option value="B">Class B</option>
+                                        <option value="C">Class C</option>
+                                    </select>
+                                </div>
+                                <div v-if="row.alreadySelected" class="col-12">
+                                    <small class="text-success"><i class="bi bi-check-circle"></i> already in tonight's list</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer d-flex justify-content-between">
+                        <small class="text-muted">
+                            {{ reviewCounts.matched }} existing, {{ reviewCounts.creating }} new
+                        </small>
+                        <div>
+                            <button type="button" class="btn btn-secondary" @click="showSpondReview = false">Cancel</button>
+                            <button type="button" class="btn btn-success ms-1" @click="confirmSpondImport">
+                                <i class="bi bi-check-lg"></i> Add players
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div v-if="showSpondPicker" class="modal custom-modal-backdrop" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content">
@@ -766,8 +914,11 @@ const TabSelection = {
                         </ul>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-link btn-sm text-muted me-auto" @click="showSpondPicker = false; signOutOfSpond()">
-                            Sign out of Spond
+                        <button type="button" class="btn btn-link btn-sm text-muted me-auto" @click="loadPastSpondEvents">
+                            Show past events
+                        </button>
+                        <button type="button" class="btn btn-link btn-sm text-muted" @click="showSpondPicker = false; signOutOfSpond()">
+                            Sign out
                         </button>
                         <button type="button" class="btn btn-secondary" @click="showSpondPicker = false">Cancel</button>
                     </div>
