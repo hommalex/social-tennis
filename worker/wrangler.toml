@@ -1,0 +1,9 @@
+name = "spond-relay"
+main = "spond-proxy.js"
+compatibility_date = "2026-01-01"
+
+# Lock the relay to the origin(s) your app is served from, comma-separated, e.g.
+#   ALLOWED_ORIGINS = "https://alexlhomme.github.io,http://localhost:8000"
+# Leave empty while testing to accept any origin.
+[vars]
+ALLOWED_ORIGINS = "https://hommalex.github.io,http://localhost:8000"

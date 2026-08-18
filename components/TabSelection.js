@@ -289,6 +289,172 @@ const TabSelection = {
             emit('finalize-session');
         };
 
+
+        // --- Spond Import ---
+        const spondBusy = ref(false);
+        const spondStatus = ref("");
+        const showSpondLogin = ref(false);
+        const spondEmail = ref("");
+        const spondPassword = ref("");
+        const spond2faCode = ref("");
+        const spond2faToken = ref(null);
+        const spondEvents = ref([]);
+        const showSpondPicker = ref(false);
+
+        const normalizeName = (name) => (name || "")
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")   // strip accents
+            .toLowerCase().replace(/\s+/g, " ").trim();
+
+        const closeSpondLogin = () => {
+            showSpondLogin.value = false;
+            spondEmail.value = "";
+            spondPassword.value = "";
+            spond2faCode.value = "";
+            spond2faToken.value = null;
+        };
+
+        // Entry point for the button.
+        const importFromSpond = async () => {
+            if (!SpondClient.isConfigured()) {
+                props.dialog.alert("Spond not set up",
+                    "The relay URL is missing. Set RELAY_URL in assets/js/spond.js to your deployed Cloudflare Worker URL.");
+                return;
+            }
+            if (!SpondClient.hasToken() || SpondClient.tokenLooksExpired()) {
+                showSpondLogin.value = true;
+                return;
+            }
+            await loadSpondEvents();
+        };
+
+        const loadSpondEvents = async () => {
+            spondBusy.value = true;
+            spondStatus.value = "Fetching events from Spond...";
+            try {
+                const events = await SpondClient.getUpcomingEvents();
+                if (!events.length) {
+                    props.dialog.alert("Nothing found", "Spond returned no upcoming events for your account.");
+                    return;
+                }
+                // Always let the user pick, even with a single event — you import
+                // ~30 min before the session and must be sure it is the right one.
+                spondEvents.value = events;
+                showSpondPicker.value = true;
+            } catch (err) {
+                if (err instanceof SpondClient.AuthError) {
+                    showSpondLogin.value = true;
+                } else {
+                    props.dialog.alert("Spond error", err.message || String(err));
+                }
+            } finally {
+                spondBusy.value = false;
+                spondStatus.value = "";
+            }
+        };
+
+        const chooseSpondEvent = async (event) => {
+            showSpondPicker.value = false;
+            await applySpondEvent(event);
+        };
+
+        // Match Spond attendees against the player database and add them to the list.
+        const applySpondEvent = async (event) => {
+            console.log("[Spond] raw event:", event);
+
+            if (props.data.current.games.length > 0) {
+                props.dialog.alert("Adding players",
+                    "The matches have already been genenrated. You need reset the matches in order for these players to included in the matches.");
+            }
+
+            const { names, unresolvedIds } = SpondClient.acceptedNames(event);
+            if (!names.length) {
+                props.dialog.alert("No attendees",
+                    "Nobody has accepted this event yet" + (unresolvedIds.length ? ", or their names were not included in the response." : "."));
+                return;
+            }
+
+            const existing = (props.data && props.data.players) || [];
+            const byName = new Map(existing.map(p => [normalizeName(p.name), p]));
+            const generateHashId = () => Math.random().toString(36).slice(2, 14);
+
+            const added = [];
+            const created = [];
+            const skipped = [];
+            const newList = [...props.selected];
+
+            names.forEach(fullName => {
+                let player = byName.get(normalizeName(fullName));
+
+                if (!player) {
+                    player = { id: generateHashId(), name: fullName, gender: "Male", level: "B" };
+                    byName.set(normalizeName(fullName), player);
+                    emit("save-new-player", player);
+                    created.push(fullName);
+                }
+
+                if (newList.some(p => p.id === player.id)) {
+                    skipped.push(player.name);
+                } else {
+                    newList.push(player);
+                    added.push(player.name);
+                }
+            });
+
+            if (added.length) {
+                emit("update-selected", newList);
+                triggerFlash(added.length === 1 ? newList[newList.length - 1].id : null);
+            }
+
+            const lines = [`${added.length} player(s) added from "${event.heading || "event"}".`];
+            if (created.length) lines.push(`New to the database (check gender/level): ${created.join(", ")}.`);
+            if (skipped.length) lines.push(`Already in the list: ${skipped.join(", ")}.`);
+            if (unresolvedIds.length) lines.push(`${unresolvedIds.length} attendee(s) could not be named — see the browser console.`);
+            props.dialog.alert("Spond import", lines.join(" "));
+        };
+
+        const doSpondLogin = async () => {
+            if (!spondEmail.value.trim() || !spondPassword.value) {
+                props.dialog.alert("Validation", "Enter your Spond email and password.");
+                return;
+            }
+            spondBusy.value = true;
+            spondStatus.value = "Signing in to Spond...";
+            try {
+                const result = await SpondClient.login(spondEmail.value, spondPassword.value);
+                if (result.needs2fa) {
+                    spond2faToken.value = result.token;
+                    spondPassword.value = "";
+                    spondStatus.value = "";
+                    return; // modal switches to the code step
+                }
+                closeSpondLogin();
+                await loadSpondEvents();
+            } catch (err) {
+                props.dialog.alert("Sign-in failed", err.message || String(err));
+            } finally {
+                spondBusy.value = false;
+                spondStatus.value = "";
+            }
+        };
+
+        const doSpond2fa = async () => {
+            spondBusy.value = true;
+            try {
+                await SpondClient.verify2fa(spond2faToken.value, spond2faCode.value);
+                closeSpondLogin();
+                await loadSpondEvents();
+            } catch (err) {
+                props.dialog.alert("Verification failed", err.message || String(err));
+            } finally {
+                spondBusy.value = false;
+            }
+        };
+
+        const signOutOfSpond = () => {
+            SpondClient.clearSession();
+            props.dialog.alert("Spond", "Signed out of Spond on this device.");
+        };
+
         return {
             searchQuery,
             showDropdown,
@@ -315,16 +481,39 @@ const TabSelection = {
 			levelPopupId,
 			toggleLevelPopup,
 			setLevel,
-			showLevelGuide
+			showLevelGuide,
+			spondBusy,
+			spondStatus,
+			showSpondLogin,
+			spondEmail,
+			spondPassword,
+			spond2faCode,
+			spond2faToken,
+			spondEvents,
+			showSpondPicker,
+			importFromSpond,
+			chooseSpondEvent,
+			doSpondLogin,
+			doSpond2fa,
+			closeSpondLogin,
+			signOutOfSpond,
+			SpondClient
         };
     },
     template: `
         <div>
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4 class="card-title text-primary mb-0">Select Players</h4>
-                <button v-if="selected.length > 0" class="btn btn-sm btn-outline-danger" @click="resetAll">
-                    <i class="bi bi-trash"></i> Reset All
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-success" @click="importFromSpond" :disabled="spondBusy" title="Import tonight's attendees from Spond">
+                        <span v-if="spondBusy" class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        <i v-else class="bi bi-cloud-download"></i>
+                        {{ spondBusy ? 'Loading...' : 'Import from Spond' }}
+                    </button>
+                    <button v-if="selected.length > 0" class="btn btn-sm btn-outline-danger" @click="resetAll">
+                        <i class="bi bi-trash"></i> Reset All
+                    </button>
+                </div>
             </div>
             
             <div v-if="switchingPlayer" class="alert alert-warning d-flex justify-content-between align-items-center">
@@ -516,6 +705,71 @@ const TabSelection = {
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-primary" @click="showLevelGuide = false">Got it!</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showSpondLogin" class="modal custom-modal-backdrop" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="bi bi-cloud-download me-2"></i>Sign in to Spond</h5>
+                        <button type="button" class="btn-close btn-close-white" @click="closeSpondLogin"></button>
+                    </div>
+                    <div class="modal-body">
+                        <template v-if="!spond2faToken">
+                            <p class="text-muted small mb-3">
+                                Your Spond login is sent straight to Spond and never stored — only the
+                                session token is kept on this device, so you should only need this once.
+                            </p>
+                            <div class="mb-2">
+                                <label class="form-label">Spond email</label>
+                                <input type="email" class="form-control" v-model="spondEmail" autocomplete="username" placeholder="you@example.com">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Spond password</label>
+                                <input type="password" class="form-control" v-model="spondPassword" autocomplete="current-password" @keyup.enter="doSpondLogin">
+                            </div>
+                        </template>
+                        <template v-else>
+                            <p class="mb-3">Spond sent a verification code to your phone. Enter it below.</p>
+                            <input type="text" class="form-control" v-model="spond2faCode" inputmode="numeric" placeholder="6-digit code" @keyup.enter="doSpond2fa">
+                        </template>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @click="closeSpondLogin">Cancel</button>
+                        <button v-if="!spond2faToken" type="button" class="btn btn-success" @click="doSpondLogin" :disabled="spondBusy">
+                            <span v-if="spondBusy" class="spinner-border spinner-border-sm me-1"></span>Sign in
+                        </button>
+                        <button v-else type="button" class="btn btn-success" @click="doSpond2fa" :disabled="spondBusy">Verify</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showSpondPicker" class="modal custom-modal-backdrop" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="bi bi-calendar-event me-2"></i>Which event?</h5>
+                        <button type="button" class="btn-close btn-close-white" @click="showSpondPicker = false"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <ul class="list-group list-group-flush">
+                            <li v-for="ev in spondEvents" :key="ev.id"
+                                class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                style="cursor: pointer;" @click="chooseSpondEvent(ev)">
+                                <span>{{ SpondClient.eventLabel(ev) }}</span>
+                                <i class="bi bi-chevron-right text-muted"></i>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link btn-sm text-muted me-auto" @click="showSpondPicker = false; signOutOfSpond()">
+                            Sign out of Spond
+                        </button>
+                        <button type="button" class="btn btn-secondary" @click="showSpondPicker = false">Cancel</button>
                     </div>
                 </div>
             </div>
