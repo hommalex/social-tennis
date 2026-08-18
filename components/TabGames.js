@@ -6,7 +6,8 @@ const TabGames = {
 
         const config = reactive({
             gamesPerMatch: 7, 
-            numRounds: 3 
+            numRounds: 3,
+            numCourts: 5
         });
 
         const generatedRounds = ref([]); 
@@ -200,6 +201,7 @@ const TabGames = {
             if (props.data && props.data.current) {
                 if (props.data.current.gamesPerMatch) config.gamesPerMatch = props.data.current.gamesPerMatch;
                 if (props.data.current.numOfRounds) config.numRounds = props.data.current.numOfRounds;
+                if (props.data.current.numOfCourts) config.numCourts = props.data.current.numOfCourts;
 
                 if (Array.isArray(props.data.current.games) && props.data.current.games.length > 0) {
                     generatedRounds.value = props.data.current.games;
@@ -302,6 +304,32 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
+        // --- Courts -------------------------------------------------------
+        // A court is held only by a game that is actually in play. Finished games
+        // keep their court number for the record but release the court itself.
+        const courtNumbers = computed(() =>
+            Array.from({ length: config.numCourts }, (_, i) => i + 1));
+
+        const occupiedCourts = computed(() => {
+            const busy = new Map();
+            generatedRounds.value.forEach(round => {
+                (round.games || []).forEach(g => {
+                    if (g.status === 'in_play' && g.court) busy.set(g.court, g);
+                });
+            });
+            return busy;
+        });
+
+        const freeCourts = computed(() =>
+            courtNumbers.value.filter(c => !occupiedCourts.value.has(c)));
+
+        /** Lowest free court, preferring the one already pencilled in for this game. */
+        const claimCourt = (game) => {
+            const free = freeCourts.value;
+            if (game.court && free.includes(game.court)) return game.court;
+            return free.length ? free[0] : null;
+        };
+
         const switchStatus = async (game) => {
             // 1. Resolve the Real Game Object
             let targetGame = game;
@@ -313,9 +341,17 @@ const TabGames = {
 
             // 2. Apply Logic to targetGame
             if (targetGame.status === 'awaiting') {
+                const court = claimCourt(targetGame);
+                if (!court) {
+                    props.dialog.alert("No court free",
+                        "You need add a result on a court.");
+                    return;
+                }
+                targetGame.court = court;
                 targetGame.status = 'in_play';
             } else if (targetGame.status === 'in_play') {
                 targetGame.status = 'awaiting';
+                targetGame.court = null;
             } else if (targetGame.status === 'finished') {
                 const confirmed = await props.dialog.confirm(
                     "Reset Game",
@@ -325,6 +361,7 @@ const TabGames = {
                 targetGame.status = 'awaiting';
                 targetGame.scoreA = 0;
                 targetGame.scoreB = 0;
+                targetGame.court = null;
             }
 
             calculateActivePlayers();
@@ -395,6 +432,7 @@ const TabGames = {
             if (!props.data.current) props.data.current = {};
             props.data.current.numOfRounds = config.numRounds;
             props.data.current.gamesPerMatch = config.gamesPerMatch;
+            props.data.current.numOfCourts = config.numCourts;
 
             const schedule = [];
             const players = [...props.selected];
@@ -598,6 +636,20 @@ const TabGames = {
 
                 schedule.push({ roundNumber: r, games: roundGames, sitOuts: [] });
             }
+            // Put the opening games straight onto courts 1..N and start them, so the
+            // session begins with every court in play rather than everything awaiting.
+            let nextCourt = 1;
+            schedule.forEach(round => {
+                (round.games || []).forEach(g => {
+                    if (nextCourt <= config.numCourts) {
+                        g.court = nextCourt++;
+                        g.status = 'in_play';
+                    } else {
+                        g.court = null;
+                    }
+                });
+            });
+
             generatedRounds.value = schedule;
             calculateActivePlayers();
             checkConflicts();
@@ -636,6 +688,9 @@ const TabGames = {
             openScoreModal, 
             switchStatus,
             getHeaderClass,
+            courtNumbers,
+            occupiedCourts,
+            freeCourts,
             activePlayerIds,
             activeGame,
             activePair,
@@ -684,6 +739,21 @@ const TabGames = {
                             </div>
                         </div>
                         <div class="col-md-3">
+                            <label class="form-label">Courts in Use</label>
+                            <div class="btn-group w-100" role="group">
+                              <input type="radio" class="btn-check" name="numofcourts" id="c3" :checked="config.numCourts === 3" @click="config.numCourts = 3">
+                              <label class="btn btn-outline-primary" for="c3">3</label>
+                              <input type="radio" class="btn-check" name="numofcourts" id="c4" :checked="config.numCourts === 4" @click="config.numCourts = 4">
+                              <label class="btn btn-outline-primary" for="c4">4</label>
+                              <input type="radio" class="btn-check" name="numofcourts" id="c5" :checked="config.numCourts === 5" @click="config.numCourts = 5">
+                              <label class="btn btn-outline-primary" for="c5">5</label>
+                              <input type="radio" class="btn-check" name="numofcourts" id="c6" :checked="config.numCourts === 6" @click="config.numCourts = 6">
+                              <label class="btn btn-outline-primary" for="c6">6</label>
+                              <input type="radio" class="btn-check" name="numofcourts" id="c7" :checked="config.numCourts === 7" @click="config.numCourts = 7">
+                              <label class="btn btn-outline-primary" for="c7">7</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
                             <button class="btn btn-primary w-100" @click="generateSchedule">
                                 <i class="bi bi-controller"></i> Generate Matches
                             </button>
@@ -741,7 +811,12 @@ const TabGames = {
                                             <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
                                                  :class="getHeaderClass(game.status)" 
                                                  @click="switchStatus(game)">
-                                                <strong>Game {{ gIdx + 1 }}</strong>
+                                                <strong>
+                                                    Game {{ gIdx + 1 }}
+                                                    <span v-if="game.court" class="badge bg-dark ms-1">
+                                                        <i class="bi bi-geo-alt-fill"></i> Court {{ game.court }}
+                                                    </span>
+                                                </strong>
                                                 <span class="badge bg-light text-dark">
                                                     {{ game.status === 'in_play' ? 'In Play' : (game.status === 'finished' ? 'Finished' : 'Awaiting') }}
                                                 </span>
@@ -820,7 +895,12 @@ const TabGames = {
                                     <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
                                          :class="getHeaderClass(game.status)" 
                                          @click="switchStatus(game)">
-                                        <strong>Round {{ game.roundNum }}</strong>
+                                        <strong>
+                                            Round {{ game.roundNum }}
+                                            <span v-if="game.court" class="badge bg-dark ms-1">
+                                                <i class="bi bi-geo-alt-fill"></i> Court {{ game.court }}
+                                            </span>
+                                        </strong>
                                         <span class="badge bg-light text-dark">
                                             {{ game.status === 'in_play' ? 'In Play' : (game.status === 'finished' ? 'Finished' : 'Awaiting') }}
                                         </span>
