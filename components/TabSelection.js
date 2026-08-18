@@ -372,14 +372,34 @@ const TabSelection = {
             }
         };
 
-        const chooseSpondEvent = (event) => {
+        const chooseSpondEvent = async (event) => {
             showSpondPicker.value = false;
-            applySpondEvent(event);
+            await applySpondEvent(event);
+        };
+
+        // New arrivals from Spond need a gender and class before they are useful
+        // for match generation, so they are prompted for right after the import.
+        const showNewPlayerPrompt = ref(false);
+        const newPlayerRows = ref([]);
+
+        const newPlayersReady = computed(() => newPlayerRows.value.every(r => r.gender && r.level));
+
+        const saveNewPlayerDetails = () => {
+            newPlayerRows.value.forEach(r => {
+                emit("edit-player", { id: r.id, name: r.name, gender: r.gender, level: r.level });
+            });
+            showNewPlayerPrompt.value = false;
+            newPlayerRows.value = [];
+        };
+
+        const dismissNewPlayerPrompt = () => {
+            showNewPlayerPrompt.value = false;
+            newPlayerRows.value = [];
         };
 
         // Import attendees straight in. Players carry the Spond member id they came
         // from, so this resolves by id — spelling can never cause a mismatch.
-        const applySpondEvent = (event) => {
+        const applySpondEvent = async (event) => {
             console.log("[Spond] raw event:", event);
 
             const attendees = SpondClient.acceptedAttendees(event);
@@ -399,6 +419,7 @@ const TabSelection = {
 
             const newList = [...props.selected];
             const created = [];
+            const createdPlayers = [];
             const nameless = [];
             let added = 0, alreadyIn = 0;
 
@@ -412,6 +433,7 @@ const TabSelection = {
                     emit("save-new-player", player);
                     bySpondId.set(att.spondId, player);
                     created.push(player.name);
+                    createdPlayers.push(player);
                 }
 
                 if (newList.some(p => p.id === player.id)) { alreadyIn++; return; }
@@ -422,13 +444,20 @@ const TabSelection = {
             if (added) emit("update-selected", newList);
 
             const lines = [`${added} player(s) added from "${event.heading || "event"}".`];
-            if (created.length) lines.push(`New to the club list (set their level and gender): ${created.join(", ")}.`);
+            if (created.length) lines.push(`New from Spond: ${created.join(", ")}.`);
             if (alreadyIn) lines.push(`${alreadyIn} were already in the list.`);
             if (nameless.length) {
                 lines.push(`${nameless.length} attendee(s) could not be identified — see the browser console.`);
                 console.warn("[Spond] attendees with no name in payload:", nameless);
             }
-            props.dialog.alert("Spond import", lines.join(" "));
+            await props.dialog.alert("Spond import", lines.join(" "));
+
+            if (createdPlayers.length) {
+                newPlayerRows.value = createdPlayers.map(p => ({
+                    id: p.id, name: p.name, gender: null, level: p.level || "B"
+                }));
+                showNewPlayerPrompt.value = true;
+            }
         };
 
         const doSpondLogin = async () => {
@@ -516,6 +545,11 @@ const TabSelection = {
 			doSpond2fa,
 			closeSpondLogin,
 			signOutOfSpond,
+			showNewPlayerPrompt,
+			newPlayerRows,
+			newPlayersReady,
+			saveNewPlayerDetails,
+			dismissNewPlayerPrompt,
 			loadPastSpondEvents,
 			SpondClient
         };
@@ -763,6 +797,71 @@ const TabSelection = {
                             <span v-if="spondBusy" class="spinner-border spinner-border-sm me-1"></span>Sign in
                         </button>
                         <button v-else type="button" class="btn btn-success" @click="doSpond2fa" :disabled="spondBusy">Verify</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showNewPlayerPrompt" class="modal custom-modal-backdrop" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title"><i class="bi bi-person-plus-fill me-2"></i>New player{{ newPlayerRows.length > 1 ? 's' : '' }} from Spond</h5>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted">
+                            Set the gender and class so the matches come out balanced.
+                        </p>
+                        <div v-for="row in newPlayerRows" :key="row.id" class="border rounded p-2 mb-2">
+                            <div class="fw-bold mb-2">
+                                <i v-if="row.gender === 'Female'" class="bi bi-gender-female text-danger"></i>
+                                <i v-else-if="row.gender === 'Male'" class="bi bi-gender-male text-primary"></i>
+                                <i v-else class="bi bi-question-circle text-warning"></i>
+                                {{ row.name }}
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn"
+                                            :class="row.gender === 'Male' ? 'btn-primary' : 'btn-outline-primary'"
+                                            @click="row.gender = 'Male'">
+                                        <i class="bi bi-gender-male"></i> Male
+                                    </button>
+                                    <button type="button" class="btn"
+                                            :class="row.gender === 'Female' ? 'btn-danger' : 'btn-outline-danger'"
+                                            @click="row.gender = 'Female'">
+                                        <i class="bi bi-gender-female"></i> Female
+                                    </button>
+                                </div>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn"
+                                            :class="row.level === 'A' ? 'btn-success' : 'btn-outline-success'"
+                                            @click="row.level = 'A'">
+                                        <i class="bi bi-battery-full"></i> A
+                                    </button>
+                                    <button type="button" class="btn"
+                                            :class="row.level === 'B' ? 'btn-info' : 'btn-outline-info'"
+                                            @click="row.level = 'B'">
+                                        <i class="bi bi-battery-half"></i> B
+                                    </button>
+                                    <button type="button" class="btn"
+                                            :class="row.level === 'C' ? 'btn-secondary' : 'btn-outline-secondary'"
+                                            @click="row.level = 'C'">
+                                        <i class="bi bi-battery"></i> C
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <p v-if="!newPlayersReady" class="small text-warning mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> Pick a gender for everyone to continue.
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link btn-sm text-muted me-auto" @click="dismissNewPlayerPrompt">
+                            I'll do it later
+                        </button>
+                        <button type="button" class="btn btn-info" :disabled="!newPlayersReady" @click="saveNewPlayerDetails">
+                            <i class="bi bi-check-lg"></i> Save
+                        </button>
                     </div>
                 </div>
             </div>
