@@ -208,24 +208,25 @@ const SpondClient = (() => {
         return names;
     }
 
-    /** Names of everyone who accepted the given event. */
-    function acceptedNames(event) {
+    /**
+     * Everyone who accepted, as {spondId, name}.
+     *
+     * spondId is the group-member id used in responses.acceptedIds, and it is
+     * stored on each player, so imports resolve by id and never by name.
+     */
+    function acceptedAttendees(event) {
         const ids = (event.responses && event.responses.acceptedIds) || [];
         const names = buildNameIndex(event);
-        const resolved = [];
-        const unresolved = [];
-        ids.forEach(id => {
-            const n = names.get(id);
-            if (n) resolved.push(n); else unresolved.push(id);
-        });
-        // Hosts accept via their own field rather than acceptedIds.
+
+        const out = ids.map(id => ({ spondId: id, name: names.get(id) || null }));
+
+        // Hosts record their answer on their own entry, not in acceptedIds.
         (event.owners || []).forEach(o => {
-            if (o.response === "accepted") {
-                const n = names.get(o.id);
-                if (n && !resolved.includes(n)) resolved.push(n);
+            if (o.response === "accepted" && !out.some(a => a.spondId === o.id)) {
+                out.push({ spondId: o.id, name: names.get(o.id) || null });
             }
         });
-        return { names: resolved, unresolvedIds: unresolved };
+        return out;
     }
 
     const eventLabel = e => {
@@ -244,6 +245,6 @@ const SpondClient = (() => {
         getGroupId, setGroupId,
         login, verify2fa,
         getGroups, getUpcomingEvents, getPastEvents,
-        acceptedNames, eventLabel,
+        acceptedAttendees, eventLabel,
     };
 })();

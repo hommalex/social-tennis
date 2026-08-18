@@ -13,3 +13,6 @@ worker/.wrangler/
 
 # JetBrains IDE
 .idea/
+
+# local data backups
+backups/

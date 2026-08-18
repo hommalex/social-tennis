@@ -374,109 +374,60 @@ const TabSelection = {
 
         const chooseSpondEvent = (event) => {
             showSpondPicker.value = false;
-            prepareSpondImport(event);
+            applySpondEvent(event);
         };
 
-        // --- Review step -------------------------------------------------
-        // Nothing is written until the user confirms: Spond names do not line up
-        // cleanly with the player database (shortened surnames, first-name-only
-        // rows, misspellings), so every attendee is shown as an editable proposal.
-        const showSpondReview = ref(false);
-        const spondReviewRows = ref([]);
-        const spondEventName = ref("");
-        const NEW_PLAYER = "__new__";
-
-        const playerOptions = computed(() => {
-            const list = ((props.data && props.data.players) || []).filter(p => p && p.name);
-            return list.slice().sort((a, b) => a.name.localeCompare(b.name));
-        });
-
-        const prepareSpondImport = (event) => {
+        // Import attendees straight in. Players carry the Spond member id they came
+        // from, so this resolves by id — spelling can never cause a mismatch.
+        const applySpondEvent = (event) => {
             console.log("[Spond] raw event:", event);
-            spondEventName.value = event.heading || "event";
 
-            const { names, unresolvedIds } = SpondClient.acceptedNames(event);
-            if (unresolvedIds.length) {
-                console.warn("[Spond] attendee ids with no name in payload:", unresolvedIds);
-            }
-            if (!names.length) {
-                props.dialog.alert("No attendees",
-                    "Nobody has accepted this event yet" + (unresolvedIds.length ? ", or their names were missing from the response." : "."));
+            const attendees = SpondClient.acceptedAttendees(event);
+            if (!attendees.length) {
+                props.dialog.alert("No attendees", "Nobody has accepted this event yet.");
                 return;
             }
 
-            const proposals = SpondMatch.proposals(names, (props.data && props.data.players) || []);
-            const alreadyIn = new Set(props.selected.map(p => p.id));
-
-            spondReviewRows.value = proposals.map(row => ({
-                spondName: row.spondName,
-                tier: row.tier,
-                ambiguous: row.ambiguous,
-                needsLook: !SpondMatch.isConfident(row),
-                choiceId: row.player ? row.player.id : NEW_PLAYER,
-                alreadySelected: row.player ? alreadyIn.has(row.player.id) : false,
-                gender: "Male",
-                level: "B",
-                include: true,
-            }));
-            showSpondReview.value = true;
-        };
-
-        const reviewCounts = computed(() => {
-            const rows = spondReviewRows.value.filter(r => r.include);
-            return {
-                total: spondReviewRows.value.length,
-                creating: rows.filter(r => r.choiceId === NEW_PLAYER).length,
-                matched: rows.filter(r => r.choiceId !== NEW_PLAYER).length,
-                flagged: spondReviewRows.value.filter(r => r.needsLook && r.include).length,
-            };
-        });
-
-        const tierBadge = (tier) => (SpondMatch.TIER[tier] || SpondMatch.TIER.none).badge;
-        const tierLabel = (tier) => (SpondMatch.TIER[tier] || SpondMatch.TIER.none).label;
-
-        const confirmSpondImport = () => {
             if (props.data.current.games.length > 0) {
                 props.dialog.alert("Adding players",
                     "The matches have already been genenrated. You need reset the matches in order for these players to included in the matches.");
             }
 
-            const generateHashId = () => Math.random().toString(36).slice(2, 14);
             const players = (props.data && props.data.players) || [];
+            const bySpondId = new Map(players.filter(p => p.spondId).map(p => [p.spondId, p]));
+            const generateHashId = () => Math.random().toString(36).slice(2, 14);
+
             const newList = [...props.selected];
             const created = [];
-            let added = 0, skipped = 0;
+            const nameless = [];
+            let added = 0, alreadyIn = 0;
 
-            spondReviewRows.value.filter(r => r.include).forEach(row => {
-                let player;
+            attendees.forEach(att => {
+                let player = bySpondId.get(att.spondId);
 
-                if (row.choiceId === NEW_PLAYER) {
-                    player = {
-                        id: generateHashId(),
-                        name: row.spondName,
-                        gender: row.gender,
-                        level: row.level,
-                    };
+                if (!player) {
+                    if (!att.name) { nameless.push(att.spondId); return; }
+                    // Joined the Spond group after the last import.
+                    player = { id: generateHashId(), spondId: att.spondId, name: att.name, level: "B" };
                     emit("save-new-player", player);
+                    bySpondId.set(att.spondId, player);
                     created.push(player.name);
-                } else {
-                    player = players.find(p => p.id === row.choiceId);
-                    if (!player) return;
                 }
 
-                if (newList.some(p => p.id === player.id)) { skipped++; return; }
+                if (newList.some(p => p.id === player.id)) { alreadyIn++; return; }
                 newList.push(player);
                 added++;
             });
 
             if (added) emit("update-selected", newList);
 
-            showSpondReview.value = false;
-            spondReviewRows.value = [];
-
-            const lines = [`${added} player(s) added from "${spondEventName.value}".`];
-            if (created.length) lines.push(`Created: ${created.join(", ")}.`);
-            if (skipped) lines.push(`${skipped} were already in the list.`);
+            const lines = [`${added} player(s) added from "${event.heading || "event"}".`];
+            if (created.length) lines.push(`New to the club list (set their level and gender): ${created.join(", ")}.`);
+            if (alreadyIn) lines.push(`${alreadyIn} were already in the list.`);
+            if (nameless.length) {
+                lines.push(`${nameless.length} attendee(s) could not be identified — see the browser console.`);
+                console.warn("[Spond] attendees with no name in payload:", nameless);
+            }
             props.dialog.alert("Spond import", lines.join(" "));
         };
 
@@ -565,16 +516,7 @@ const TabSelection = {
 			doSpond2fa,
 			closeSpondLogin,
 			signOutOfSpond,
-			showSpondReview,
-			spondReviewRows,
-			spondEventName,
-			playerOptions,
-			reviewCounts,
-			tierBadge,
-			tierLabel,
-			confirmSpondImport,
 			loadPastSpondEvents,
-			NEW_PLAYER,
 			SpondClient
         };
     },
@@ -821,76 +763,6 @@ const TabSelection = {
                             <span v-if="spondBusy" class="spinner-border spinner-border-sm me-1"></span>Sign in
                         </button>
                         <button v-else type="button" class="btn btn-success" @click="doSpond2fa" :disabled="spondBusy">Verify</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="showSpondReview" class="modal custom-modal-backdrop" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title"><i class="bi bi-people-fill me-2"></i>Review import</h5>
-                        <button type="button" class="btn-close btn-close-white" @click="showSpondReview = false"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p class="small text-muted">
-                            <strong>{{ spondEventName }}</strong> — {{ reviewCounts.total }} attending.
-                            <span v-if="reviewCounts.flagged" class="text-warning fw-bold">
-                                {{ reviewCounts.flagged }} need a look (highlighted).
-                            </span>
-                            <span v-else>All matched cleanly.</span>
-                        </p>
-
-                        <div v-for="(row, i) in spondReviewRows" :key="i"
-                             class="border rounded p-2 mb-2"
-                             :class="row.needsLook && row.include ? 'border-warning bg-light' : ''">
-                            <div class="d-flex align-items-center justify-content-between mb-1">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" v-model="row.include" :id="'inc'+i">
-                                    <label class="form-check-label fw-bold" :for="'inc'+i">{{ row.spondName }}</label>
-                                </div>
-                                <span class="badge" :class="'bg-' + tierBadge(row.tier)">
-                                    {{ row.ambiguous ? 'pick one' : tierLabel(row.tier) }}
-                                </span>
-                            </div>
-
-                            <div v-if="row.include" class="row g-2">
-                                <div :class="row.choiceId === NEW_PLAYER ? 'col-12 col-sm-6' : 'col-12'">
-                                    <select class="form-select form-select-sm" v-model="row.choiceId">
-                                        <option :value="NEW_PLAYER">+ Create "{{ row.spondName }}" as a new player</option>
-                                        <option v-for="p in playerOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
-                                    </select>
-                                </div>
-                                <div v-if="row.choiceId === NEW_PLAYER" class="col-6 col-sm-3">
-                                    <select class="form-select form-select-sm" v-model="row.gender">
-                                        <option value="Male">Male</option>
-                                        <option value="Female">Female</option>
-                                    </select>
-                                </div>
-                                <div v-if="row.choiceId === NEW_PLAYER" class="col-6 col-sm-3">
-                                    <select class="form-select form-select-sm" v-model="row.level">
-                                        <option value="A">Class A</option>
-                                        <option value="B">Class B</option>
-                                        <option value="C">Class C</option>
-                                    </select>
-                                </div>
-                                <div v-if="row.alreadySelected" class="col-12">
-                                    <small class="text-success"><i class="bi bi-check-circle"></i> already in tonight's list</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer d-flex justify-content-between">
-                        <small class="text-muted">
-                            {{ reviewCounts.matched }} existing, {{ reviewCounts.creating }} new
-                        </small>
-                        <div>
-                            <button type="button" class="btn btn-secondary" @click="showSpondReview = false">Cancel</button>
-                            <button type="button" class="btn btn-success ms-1" @click="confirmSpondImport">
-                                <i class="bi bi-check-lg"></i> Add players
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>
