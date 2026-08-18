@@ -78,15 +78,16 @@ const TabGames = {
         };
 
         /** Games on court right now, plus ones just scored so they don't vanish mid-glance. */
-        const activeGames = computed(() => {
-            if (viewMode.value !== 'board') return [];
-            return flatten(g => g.status === 'in_play' || recentlyFinished.value.has(g.id))
-                .sort((a, b) => (a.court || 99) - (b.court || 99));
-        });
+        const activeGames = computed(() =>
+            flatten(g => g.status === 'in_play' || recentlyFinished.value.has(g.id))
+                .sort((a, b) => (a.court || 99) - (b.court || 99)));
 
-        /** Next up: awaiting games whose four players are all off court. */
+        /**
+         * Next up: awaiting games whose four players are all off court.
+         * Not gated on viewMode — needsCourtFill depends on this being accurate
+         * whichever view happens to be open.
+         */
         const queueGames = computed(() => {
-            if (viewMode.value !== 'board') return [];
             return flatten(g => {
                 if (g.status !== 'awaiting') return false;
                 const busy = (p) => p && activePlayerIds.value.has(p.id);
@@ -103,34 +104,15 @@ const TabGames = {
         ]);
 
         const checkConflicts = () => {
-            const pairHistory = {}; 
             const conflicts = new Set();
             conflictMsg.value = "";
 
             if (!generatedRounds.value) return;
 
-            generatedRounds.value.forEach(round => {
-                if(!round.games) return;
-                round.games.forEach(game => {
-                    // Only check for conflicts if it is a Doubles game (has p2)
-                    if (game.pairA.p2) {
-                        const idsA = [game.pairA.p1.id, game.pairA.p2.id].sort();
-                        const keyA = idsA.join('_');
-                        if (!pairHistory[keyA]) pairHistory[keyA] = [];
-                        pairHistory[keyA].push(round.roundNumber);
-                    }
-
-                    if (game.pairB.p2) {
-                        const idsB = [game.pairB.p1.id, game.pairB.p2.id].sort();
-                        const keyB = idsB.join('_');
-                        if (!pairHistory[keyB]) pairHistory[keyB] = [];
-                        pairHistory[keyB].push(round.roundNumber);
-                    }
-                });
-            });
+            const { partners: pairHistory } = buildPairHistory();
 
             let foundConflict = false;
-            for (const [key, rounds] of Object.entries(pairHistory)) {
+            for (const [key, rounds] of pairHistory.entries()) {
                 if (rounds.length > 1) {
                     foundConflict = true;
                     const ids = key.split('_');
@@ -249,6 +231,26 @@ const TabGames = {
             return { icon: 'bi-battery-half', color: 'text-info', title: 'Class B' };
         };
 
+        /**
+         * Exchange the players occupying two slots in the same round and refresh the
+         * pair strengths. Shared by the manual two-click swap and the automatic
+         * court-fill swap so both behave identically.
+         */
+        const swapSlots = (a, b) => {
+            const round = generatedRounds.value[a.rIdx];
+            const slotA = round.games[a.gIdx][a.pairKey];
+            const slotB = round.games[b.gIdx][b.pairKey];
+
+            const tmp = slotA[a.pKey];
+            slotA[a.pKey] = slotB[b.pKey];
+            slotB[b.pKey] = tmp;
+
+            [[a.gIdx, a.pairKey], [b.gIdx, b.pairKey]].forEach(([gi, pk]) => {
+                const pair = round.games[gi][pk];
+                pair.strength = getScore(pair.p1) + (pair.p2 ? getScore(pair.p2) : 0);
+            });
+        };
+
         const handleSwap = (rIdx, gIdx, pairKey, pKey) => {
             if (!swapSource.value) {
                 swapSource.value = { rIdx, gIdx, pairKey, pKey };
@@ -278,21 +280,7 @@ const TabGames = {
                 return;
             }
 
-            const round = generatedRounds.value[source.rIdx];
-            const player1 = round.games[source.gIdx][source.pairKey][source.pKey];
-            const player2 = round.games[target.gIdx][target.pairKey][target.pKey];
-
-            round.games[source.gIdx][source.pairKey][source.pKey] = player2;
-            round.games[target.gIdx][target.pairKey][target.pKey] = player1;
-
-            const updateStrength = (gIdx, pKey) => {
-                const p1 = round.games[gIdx][pKey].p1;
-                const p2 = round.games[gIdx][pKey].p2;
-                round.games[gIdx][pKey].strength = getScore(p1) + (p2 ? getScore(p2) : 0);
-            };
-
-            updateStrength(source.gIdx, source.pairKey);
-            updateStrength(target.gIdx, target.pairKey);
+            swapSlots(source, target);
 
             swapSource.value = null;
             checkConflicts();
@@ -300,6 +288,252 @@ const TabGames = {
             calculateActivePlayers();
             emit('update-games', generatedRounds.value);
         };
+
+        // --- Auto-fill a spare court ---------------------------------------
+        // With 24+ players on 5 courts the queue dries up: every remaining game in
+        // the round still contains someone who is mid-match, so a court sits idle.
+        // Swapping a busy player for a free one of the same gender and level makes
+        // a game playable again. Singles games are left alone — those are arranged
+        // by hand at the start of the session.
+
+        const pairKeyOf = (a, b) => [a, b].sort().join('_');
+
+        /**
+         * Single pass over the schedule producing both histories, keyed pair -> rounds.
+         * `partners` is what checkConflicts already needed; `met` is the same notion of
+         * "have shared a game" that checkRepeatedGames highlights. Built here so the
+         * planner can ask the hypothetical question — would this swap repeat a pairing? —
+         * against exactly the same definition the warnings use.
+         */
+        const buildPairHistory = () => {
+            const partners = new Map();
+            const met = new Map();
+            const push = (map, k, r) => {
+                if (!map.has(k)) map.set(k, []);
+                map.get(k).push(r);
+            };
+            generatedRounds.value.forEach(round => {
+                (round.games || []).forEach(g => {
+                    ['pairA', 'pairB'].forEach(pk => {
+                        const pair = g[pk];
+                        if (pair && pair.p1 && pair.p2)
+                            push(partners, pairKeyOf(pair.p1.id, pair.p2.id), round.roundNumber);
+                    });
+                    const ps = [g.pairA.p1, g.pairA.p2, g.pairB.p1, g.pairB.p2].filter(Boolean);
+                    for (let i = 0; i < ps.length; i++)
+                        for (let j = i + 1; j < ps.length; j++)
+                            push(met, pairKeyOf(ps[i].id, ps[j].id), round.roundNumber);
+                });
+            });
+            return { partners, met };
+        };
+
+        /** Pair keys that already appear more than once in the schedule as it stands. */
+        const existingDuplicatePairs = (history) => {
+            const dupes = new Set();
+            history.forEach((rounds, key) => { if (rounds.length > 1) dupes.add(key); });
+            return dupes;
+        };
+
+        /**
+         * Replay a plan on a throwaway copy of the schedule and report whether it would
+         * create a partnership that repeats. Returns true if it would, so the caller can
+         * discard the plan rather than offer an illegal swap.
+         */
+        const introducesDuplicatePair = (swaps) => {
+            const clone = generatedRounds.value.map(r => ({
+                roundNumber: r.roundNumber,
+                games: (r.games || []).map(g => ({
+                    pairA: { p1: g.pairA.p1, p2: g.pairA.p2 },
+                    pairB: { p1: g.pairB.p1, p2: g.pairB.p2 }
+                }))
+            }));
+
+            swaps.forEach(sw => {
+                const a = clone[sw.out.rIdx].games[sw.out.gIdx][sw.out.pairKey];
+                const b = clone[sw.in.rIdx].games[sw.in.gIdx][sw.in.pairKey];
+                const tmp = a[sw.out.pKey];
+                a[sw.out.pKey] = b[sw.in.pKey];
+                b[sw.in.pKey] = tmp;
+            });
+
+            const countPairs = (rounds) => {
+                const m = new Map();
+                rounds.forEach(r => (r.games || []).forEach(g => {
+                    ['pairA', 'pairB'].forEach(pk => {
+                        const p = g[pk];
+                        if (p && p.p1 && p.p2) {
+                            const k = pairKeyOf(p.p1.id, p.p2.id);
+                            if (!m.has(k)) m.set(k, []);
+                            m.get(k).push(r.roundNumber);
+                        }
+                    });
+                }));
+                return m;
+            };
+
+            // Only NEW repeats disqualify a plan — the schedule may already contain some
+            // from earlier manual edits, and those are not this swap's fault.
+            const before = existingDuplicatePairs(buildPairHistory().partners);
+            const after = existingDuplicatePairs(countPairs(clone));
+            for (const key of after) if (!before.has(key)) return true;
+            return false;
+        };
+
+        const sameClass = (a, b) =>
+            (a.gender || 'Male') === (b.gender || 'Male') &&
+            (a.level || 'B') === (b.level || 'B');
+
+        /** Every doubles slot in an awaiting game of this round, with its occupant. */
+        const swappableSlots = (round, rIdx) => {
+            const slots = [];
+            (round.games || []).forEach((g, gIdx) => {
+                if (g.status !== 'awaiting') return;
+                if (g.type === 'singles' || !g.pairA.p2 || !g.pairB.p2) return; // hands off singles
+                ['pairA', 'pairB'].forEach(pairKey => {
+                    ['p1', 'p2'].forEach(pKey => {
+                        const player = g[pairKey][pKey];
+                        if (player) slots.push({ rIdx, gIdx, pairKey, pKey, player, game: g });
+                    });
+                });
+            });
+            return slots;
+        };
+
+        /**
+         * Find the swaps that would free up one game for a spare court.
+         * Returns { game, roundNumber, swaps, softWarnings } or { error }.
+         */
+        const planCourtFill = () => {
+            const { partners, met } = buildPairHistory();
+            const busy = activePlayerIds.value;
+
+            const partneredAlready = (a, b) => (partners.get(pairKeyOf(a.id, b.id)) || []).length > 0;
+            const metAlready = (a, b) => (met.get(pairKeyOf(a.id, b.id)) || []).length > 0;
+
+            for (let rIdx = 0; rIdx < generatedRounds.value.length; rIdx++) {
+                const round = generatedRounds.value[rIdx];
+                const slots = swappableSlots(round, rIdx);
+
+                for (const target of (round.games || []).map((g, gIdx) => ({ g, gIdx }))) {
+                    const { g, gIdx } = target;
+                    if (g.status !== 'awaiting') continue;
+                    if (g.type === 'singles' || !g.pairA.p2 || !g.pairB.p2) continue;
+
+                    const occupants = [
+                        { pairKey: 'pairA', pKey: 'p1' }, { pairKey: 'pairA', pKey: 'p2' },
+                        { pairKey: 'pairB', pKey: 'p1' }, { pairKey: 'pairB', pKey: 'p2' }
+                    ].map(sl => ({ ...sl, player: g[sl.pairKey][sl.pKey] }));
+
+                    const blocked = occupants.filter(o => busy.has(o.player.id));
+                    if (!blocked.length) continue;          // already playable
+                    if (blocked.length > 2) continue;       // too disruptive to fix by swapping
+
+                    const swaps = [];
+                    const softWarnings = [];
+                    const usedSlotIds = new Set();
+                    let ok = true;
+
+                    for (const b of blocked) {
+                        // Who would this player's new partner be, in the target game?
+                        const partnerKey = b.pKey === 'p1' ? 'p2' : 'p1';
+                        const newPartner = g[b.pairKey][partnerKey];
+                        const others = occupants
+                            .filter(o => o.player.id !== b.player.id)
+                            .map(o => o.player);
+
+                        const candidates = slots.filter(sl => {
+                            const id = `${sl.gIdx}.${sl.pairKey}.${sl.pKey}`;
+                            if (usedSlotIds.has(id)) return false;
+                            if (sl.gIdx === gIdx) return false;               // must come from another game
+                            if (busy.has(sl.player.id)) return false;          // must be free right now
+                            if (!sameClass(sl.player, b.player)) return false; // same gender and level
+
+                            // A swap rewrites BOTH pairs, so neither may recreate a partnership
+                            // that exists anywhere in the schedule. This is absolute: if either
+                            // side would repeat, the candidate is out and the plan stays null.
+                            if (partneredAlready(sl.player, newPartner)) return false;
+                            const theirPartner = sl.game[sl.pairKey][sl.pKey === 'p1' ? 'p2' : 'p1'];
+                            if (theirPartner && partneredAlready(b.player, theirPartner)) return false;
+                            return true;
+                        });
+
+                        // Prefer a candidate who has never shared a game with the other three.
+                        const clean = candidates.filter(sl => !others.some(o => metAlready(sl.player, o)));
+                        const pick = clean[0] || candidates[0];
+                        if (!pick) { ok = false; break; }
+
+                        if (!clean.length) {
+                            softWarnings.push(`${pick.player.name} has already played in a game with someone here.`);
+                        }
+
+                        usedSlotIds.add(`${pick.gIdx}.${pick.pairKey}.${pick.pKey}`);
+                        swaps.push({
+                            out: { rIdx, gIdx, pairKey: b.pairKey, pKey: b.pKey, player: b.player },
+                            in:  { rIdx, gIdx: pick.gIdx, pairKey: pick.pairKey, pKey: pick.pKey, player: pick.player }
+                        });
+                    }
+
+                    // Each candidate was judged against the pre-swap schedule, so a pair of
+                    // swaps could still combine into a repeat. Simulate the whole plan and
+                    // throw it away if it introduces any partnership that did not exist before.
+                    if (ok && swaps.length && introducesDuplicatePair(swaps)) ok = false;
+
+                    if (ok && swaps.length) {
+                        return { rIdx, gIdx, game: g, roundNumber: round.roundNumber, swaps, softWarnings };
+                    }
+                }
+            }
+            // Nobody can legally be moved in, so the only way forward is to free up
+            // more players: settle a match that is still on court.
+            return { error: "No legal swap available — the free players are the wrong gender or level, or have already partnered someone in the waiting games.\n\nYou need add a result on a court to free up more players." };
+        };
+
+        const applySwaps = (swaps) => {
+            swaps.forEach(sw => swapSlots(sw.out, sw.in));
+        };
+
+        const fillSpareCourt = async () => {
+            if (!freeCourts.value.length) {
+                props.dialog.alert("No spare court", "Every court is in use.");
+                return;
+            }
+
+            const plan = planCourtFill();
+            if (plan.error) { props.dialog.alert("Cannot fill the court", plan.error); return; }
+
+            const lines = plan.swaps.map(sw =>
+                `${sw.in.player.name} comes in for ${sw.out.player.name}`);
+
+            // Show the line-up as it will be AFTER the swaps, not the current one.
+            const replacement = new Map(plan.swaps.map(sw => [sw.out.player.id, sw.in.player]));
+            const after = ['pairA', 'pairB'].map(pk => {
+                const pair = plan.game[pk];
+                return [pair.p1, pair.p2].filter(Boolean)
+                    .map(p => (replacement.get(p.id) || p).name).join(' & ');
+            }).join('  vs  ');
+
+            let msg = `To put a game on court ${freeCourts.value[0]}, round ${plan.roundNumber}:\n\n`
+                    + lines.join('\n') + `\n\nThat game becomes: ${after}`;
+            if (plan.softWarnings.length) msg += `\n\nNote: ${plan.softWarnings.join(' ')}`;
+
+            const confirmed = await props.dialog.confirm("Swap players to fill the court?", msg);
+            if (!confirmed) return;
+
+            applySwaps(plan.swaps);
+            checkConflicts();
+            checkRepeatedGames();
+            calculateActivePlayers();
+            emit('update-games', generatedRounds.value);
+        };
+
+        /** True when a court is idle but nothing in the queue can go on it. */
+        const needsCourtFill = computed(() =>
+            generatedRounds.value.length > 0 &&
+            freeCourts.value.length > 0 &&
+            queueGames.value.length === 0 &&
+            generatedRounds.value.some(r => (r.games || []).some(g => g.status === 'awaiting'))
+        );
 
         // --- Courts -------------------------------------------------------
         // A court is held only by a game that is actually in play. Finished games
@@ -700,6 +934,8 @@ const TabGames = {
 			hasFinishedGames,
 			viewMode,
             boardSections,
+            fillSpareCourt,
+            needsCourtFill,
             activeGames,
             queueGames,
 			getBatteryData,
@@ -887,6 +1123,16 @@ const TabGames = {
                                     <i class="bi" :class="section.icon"></i> {{ section.title }}
                                 </h5>
                                 <span class="badge bg-secondary ms-2">{{ section.games.length }}</span>
+                            </div>
+                            <div v-if="section.key === 'queue' && needsCourtFill"
+                                 class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between py-2 mb-2">
+                                <span>
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    Court {{ freeCourts[0] }} is free but nobody is ready.
+                                </span>
+                                <button class="btn btn-sm btn-warning" @click="fillSpareCourt">
+                                    <i class="bi bi-arrow-left-right"></i> Swap players to fill it
+                                </button>
                             </div>
                             <div v-if="section.games.length === 0" class="text-muted fst-italic small">
                                 {{ section.empty }}
