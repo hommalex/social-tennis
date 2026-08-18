@@ -60,50 +60,47 @@ const TabGames = {
             );
         });
 		
-		// --- UPDATED: Computed Property for Flat Views ---
-        const filteredGames = computed(() => {
-            if (viewMode.value === 'rounds') return []; 
-            
+		// --- Board view: Queue and Active shown together -------------------
+        const flatten = (predicate) => {
             const list = [];
-            
             generatedRounds.value.forEach((round, rIdx) => {
-                if (round.games) {
-                    round.games.forEach((game, gIdx) => {
-                        let include = false;
-
-                        // 1. ACTIVE VIEW: Show all games currently running
-                        if (viewMode.value === 'active') {
-                            if (game.status === 'in_play' || recentlyFinished.value.has(game.id)) include = true;
-                        }
-                        // 2. QUEUE VIEW: Show awaiting games ONLY if all players are free
-                        else if (viewMode.value === 'queue') {
-                            if (game.status === 'awaiting') {
-                                // Check if any player is currently busy
-                                const p1Busy = activePlayerIds.value.has(game.pairA.p1.id);
-                                const p2Busy = game.pairA.p2 && activePlayerIds.value.has(game.pairA.p2.id);
-                                const p3Busy = activePlayerIds.value.has(game.pairB.p1.id);
-                                const p4Busy = game.pairB.p2 && activePlayerIds.value.has(game.pairB.p2.id);
-
-                                // Include only if NO ONE is busy
-                                if (!p1Busy && !p2Busy && !p3Busy && !p4Busy) {
-                                    include = true;
-                                }
-                            }
-                        }
-
-                        if (include) {
-                            list.push({
-                                ...game,
-                                roundNum: round.roundNumber, 
-                                originalRIdx: rIdx,          
-                                originalGIdx: gIdx           
-                            });
-                        }
+                (round.games || []).forEach((game, gIdx) => {
+                    if (!predicate(game)) return;
+                    list.push({
+                        ...game,
+                        roundNum: round.roundNumber,
+                        originalRIdx: rIdx,
+                        originalGIdx: gIdx
                     });
-                }
+                });
             });
             return list;
+        };
+
+        /** Games on court right now, plus ones just scored so they don't vanish mid-glance. */
+        const activeGames = computed(() => {
+            if (viewMode.value !== 'board') return [];
+            return flatten(g => g.status === 'in_play' || recentlyFinished.value.has(g.id))
+                .sort((a, b) => (a.court || 99) - (b.court || 99));
         });
+
+        /** Next up: awaiting games whose four players are all off court. */
+        const queueGames = computed(() => {
+            if (viewMode.value !== 'board') return [];
+            return flatten(g => {
+                if (g.status !== 'awaiting') return false;
+                const busy = (p) => p && activePlayerIds.value.has(p.id);
+                return !busy(g.pairA.p1) && !busy(g.pairA.p2)
+                    && !busy(g.pairB.p1) && !busy(g.pairB.p2);
+            });
+        });
+
+        const boardSections = computed(() => [
+            { key: 'queue',  title: 'Queue',  icon: 'bi-hourglass', games: queueGames.value,
+              empty: 'Nothing ready — everyone waiting is still on court.' },
+            { key: 'active', title: 'Active', icon: 'bi-activity',  games: activeGames.value,
+              empty: 'No games in play.' }
+        ]);
 
         const checkConflicts = () => {
             const pairHistory = {}; 
@@ -702,7 +699,9 @@ const TabGames = {
             getPlayerStyle,
 			hasFinishedGames,
 			viewMode,
-            filteredGames,
+            boardSections,
+            activeGames,
+            queueGames,
 			getBatteryData,
             showGuide
         };
@@ -781,17 +780,14 @@ const TabGames = {
 
                     <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
                         <h4 class="text-primary mb-0">
-                            {{ viewMode === 'rounds' ? 'Round' : (viewMode === 'active' ? 'Active' : 'Queue') }}
+                            {{ viewMode === 'rounds' ? 'Round' : 'Courts' }}
                         </h4>
                         <div class="btn-group" role="group">
                             <input type="radio" class="btn-check" name="viewMode" id="vm1" value="rounds" v-model="viewMode">
-                            <label class="btn btn-outline-primary" for="vm1"><i class="bi bi-list-ol"></i></label>
+                            <label class="btn btn-outline-primary" for="vm1" title="By round"><i class="bi bi-list-ol"></i></label>
 
-                            <input type="radio" class="btn-check" name="viewMode" id="vm2" value="active" v-model="viewMode">
-                            <label class="btn btn-outline-primary" for="vm2"><i class="bi bi-activity"></i></label>
-
-                            <input type="radio" class="btn-check" name="viewMode" id="vm3" value="queue" v-model="viewMode">
-                            <label class="btn btn-outline-primary" for="vm3"><i class="bi bi-hourglass"></i></label>
+                            <input type="radio" class="btn-check" name="viewMode" id="vm2" value="board" v-model="viewMode">
+                            <label class="btn btn-outline-primary" for="vm2" title="Queue and Active together"><i class="bi bi-columns-gap"></i></label>
                         </div>
                     </div>
 
@@ -808,7 +804,7 @@ const TabGames = {
                                 <div class="row row-cols-1 row-cols-md-2 g-3">
                                     <div class="col" v-for="(game, gIdx) in round.games" :key="game.id">
                                         <div class="card h-100 border-secondary shadow-sm">
-                                            <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
+                                            <div class="card-header py-1 d-flex justify-content-between align-items-center cursor-pointer" 
                                                  :class="getHeaderClass(game.status)" 
                                                  @click="switchStatus(game)">
                                                 <strong>
@@ -885,14 +881,20 @@ const TabGames = {
                     </template>
 
                     <template v-else>
-                        <div v-if="filteredGames.length === 0" class="text-center py-5 text-muted">
-                            <i class="bi bi-inbox fs-1"></i>
-                            <p>No matches found in this view.</p>
-                        </div>
-                        <div class="row row-cols-1 row-cols-md-2 g-3">
-                            <div class="col" v-for="game in filteredGames" :key="game.id">
+                        <div v-for="section in boardSections" :key="section.key" class="mb-4">
+                            <div class="d-flex align-items-center border-bottom pb-1 mb-2">
+                                <h5 class="mb-0 text-secondary">
+                                    <i class="bi" :class="section.icon"></i> {{ section.title }}
+                                </h5>
+                                <span class="badge bg-secondary ms-2">{{ section.games.length }}</span>
+                            </div>
+                            <div v-if="section.games.length === 0" class="text-muted fst-italic small">
+                                {{ section.empty }}
+                            </div>
+                            <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 1rem;">
+                            <div v-for="game in section.games" :key="game.id">
                                 <div class="card h-100 border-secondary shadow-sm">
-                                    <div class="card-header py-1 d-flex justify-content-between cursor-pointer" 
+                                    <div class="card-header py-1 d-flex justify-content-between align-items-center cursor-pointer" 
                                          :class="getHeaderClass(game.status)" 
                                          @click="switchStatus(game)">
                                         <strong>
@@ -942,6 +944,7 @@ const TabGames = {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                             </div>
                         </div>
                     </template>
