@@ -2,7 +2,7 @@ const TabGames = {
     props: ['data', 'selected', 'dialog'],
     emits: ['update-games'],
     setup(props, { emit }) {
-        const { ref, reactive, onMounted, watch, computed } = Vue;
+        const { ref, reactive, onMounted, onUnmounted, watch, computed } = Vue;
 
         const config = reactive({
             gamesPerMatch: 7, 
@@ -889,6 +889,36 @@ const TabGames = {
             emit('update-games', schedule);
         };
 
+        // --- Fullscreen (courts view) --------------------------------------
+        // Uses the native Fullscreen API when available so the browser chrome goes
+        // too; the CSS class alone is enough on browsers that refuse the request.
+        const isFullscreen = ref(false);
+        const rootEl = ref(null);
+
+        const syncFullscreen = () => {
+            if (document.fullscreenElement === null && isFullscreen.value) {
+                isFullscreen.value = false;
+            }
+        };
+
+        const toggleFullscreen = async () => {
+            if (isFullscreen.value) {
+                isFullscreen.value = false;
+                if (document.fullscreenElement && document.exitFullscreen) {
+                    try { await document.exitFullscreen(); } catch (e) {}
+                }
+                return;
+            }
+            isFullscreen.value = true;
+            const el = rootEl.value;
+            if (el && el.requestFullscreen) {
+                try { await el.requestFullscreen(); } catch (e) {} // stays CSS-only
+            }
+        };
+
+        onMounted(() => document.addEventListener('fullscreenchange', syncFullscreen));
+        onUnmounted(() => document.removeEventListener('fullscreenchange', syncFullscreen));
+
         const showGuide = ref(false);
 
         const resetGames = async () => {
@@ -939,12 +969,15 @@ const TabGames = {
             activeGames,
             queueGames,
 			getBatteryData,
-            showGuide
+            showGuide,
+            isFullscreen,
+            toggleFullscreen,
+            rootEl
         };
     },
     template: `
-    <div>
-        <div v-if="!hasFinishedGames" class="card bg-light mb-4">
+    <div ref="rootEl" :class="{ 'games-fullscreen': isFullscreen }">
+        <div v-if="!hasFinishedGames && !isFullscreen" class="card bg-light mb-4">
             <div class="card-body">
                 <div v-if="generatedRounds.length === 0"> 
                     <div class="row g-3 align-items-end">
@@ -1018,12 +1051,20 @@ const TabGames = {
                         <h4 class="text-primary mb-0">
                             {{ viewMode === 'rounds' ? 'Round' : 'Courts' }}
                         </h4>
-                        <div class="btn-group" role="group">
-                            <input type="radio" class="btn-check" name="viewMode" id="vm1" value="rounds" v-model="viewMode">
-                            <label class="btn btn-outline-primary" for="vm1" title="By round"><i class="bi bi-list-ol"></i></label>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="btn-group" role="group">
+                                <input type="radio" class="btn-check" name="viewMode" id="vm1" value="rounds" v-model="viewMode">
+                                <label class="btn btn-outline-primary" for="vm1" title="By round"><i class="bi bi-list-ol"></i></label>
 
-                            <input type="radio" class="btn-check" name="viewMode" id="vm2" value="board" v-model="viewMode">
-                            <label class="btn btn-outline-primary" for="vm2" title="Queue and Active together"><i class="bi bi-columns-gap"></i></label>
+                                <input type="radio" class="btn-check" name="viewMode" id="vm2" value="board" v-model="viewMode">
+                                <label class="btn btn-outline-primary" for="vm2" title="Queue and Active together"><i class="bi bi-columns-gap"></i></label>
+                            </div>
+
+                            <button v-if="viewMode === 'board'" type="button" class="btn btn-outline-secondary"
+                                    :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+                                    @click="toggleFullscreen">
+                                <i class="bi" :class="isFullscreen ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i>
+                            </button>
                         </div>
                     </div>
 
@@ -1196,7 +1237,7 @@ const TabGames = {
                     </template>
             </div>
         </div>
-		<p v-if="hasFinishedGames" class="text-secondary"> Reset is disabled once a match has been finalised. </p>
+		<p v-if="hasFinishedGames && !isFullscreen" class="text-secondary"> Reset is disabled once a match has been finalised. </p>
 
         <div v-if="showGuide" class="modal custom-modal-backdrop" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
             <div class="modal-dialog modal-dialog-centered">

@@ -159,3 +159,15 @@
 .cursor-pointer {
     cursor: pointer;
 }
+/* Courts view fullscreen */
+.games-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1055;
+    background: #fff;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+.games-fullscreen .card {
+    margin-bottom: 0 !important;
+}
