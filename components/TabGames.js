@@ -1,6 +1,6 @@
 const TabGames = {
     props: ['data', 'selected', 'dialog'],
-    emits: ['update-games'],
+    emits: ['update-games', 'switch-tab'],
     setup(props, { emit }) {
         const { ref, reactive, onMounted, onUnmounted, watch, computed } = Vue;
 
@@ -11,6 +11,15 @@ const TabGames = {
         });
 
         const generatedRounds = ref([]); 
+
+        // Everyone starts at Class B, so an all-B list means the levels were
+        // never reviewed and the balancing has nothing to work with.
+        const levelsUntouched = computed(() =>
+            props.selected.length > 0 && props.selected.every(p => (p.level || 'B') === 'B')
+        );
+        const ignoreLevelWarning = ref(false);
+        const blockGenerate = computed(() => levelsUntouched.value && !ignoreLevelWarning.value);
+
         const errorMsg = ref("");
         const showRound = ref(1);
 		const viewMode = ref('rounds');
@@ -1023,7 +1032,9 @@ const TabGames = {
             showGuide,
             isFullscreen,
             toggleFullscreen,
-            rootEl
+            rootEl,
+            blockGenerate,
+            ignoreLevelWarning
         };
     },
     template: `
@@ -1072,8 +1083,20 @@ const TabGames = {
                               <label class="btn btn-outline-primary" for="c7">7</label>
                             </div>
                         </div>
+                        <div class="col-12" v-if="blockGenerate">
+                            <div class="alert alert-warning mb-0 py-2">
+                                <div>
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    To get a better result you should update the players level on the
+                                    <a href="#" class="fw-bold" @click.prevent="$emit('switch-tab', 'tab-selection')">Players tab</a>.
+                                </div>
+                                <a href="#" class="small text-muted" @click.prevent="ignoreLevelWarning = true">
+                                    The levels are fine — let me generate anyway
+                                </a>
+                            </div>
+                        </div>
                         <div class="col-12">
-                            <button class="btn btn-primary w-100" @click="generateSchedule">
+                            <button class="btn btn-primary w-100" @click="generateSchedule" :disabled="blockGenerate">
                                 <i class="bi bi-controller"></i> Generate Matches
                             </button>
                         </div>
