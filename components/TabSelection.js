@@ -64,6 +64,16 @@ const TabSelection = {
             );
         });
 
+        // Class breakdown for the selected list header
+        const levelCounts = computed(() => {
+            const counts = { A: 0, B: 0, C: 0 };
+            props.selected.forEach(p => {
+                const lvl = p.level || 'B';
+                if (counts[lvl] !== undefined) counts[lvl]++;
+            });
+            return counts;
+        });
+
         const isAlreadySelected = (playerId) => {
             return props.selected.some(sel => sel.id === playerId);
         };
@@ -507,6 +517,7 @@ const TabSelection = {
             searchQuery,
             showDropdown,
             filteredPlayers,
+            levelCounts,
             newPlayerGender,
             newPlayerLevel,
             editingId,
@@ -648,7 +659,20 @@ const TabSelection = {
             </div>
 
             <div v-if="selected.length > 0">
-                <h5 class="text-secondary border-bottom pb-2">Selected Players ({{ selected.length }})</h5>
+                <h5 class="text-secondary border-bottom pb-2 d-flex flex-wrap align-items-center gap-2">
+                    <span>Selected Players ({{ selected.length }})</span>
+                    <span class="d-flex flex-wrap gap-1">
+                        <span class="badge rounded-pill bg-success" title="Class A (Expert)">
+                            <i class="bi bi-battery-full"></i> {{ levelCounts.A }} Class A
+                        </span>
+                        <span class="badge rounded-pill bg-info" title="Class B (Intermediate)">
+                            <i class="bi bi-battery-half"></i> {{ levelCounts.B }} Class B
+                        </span>
+                        <span class="badge rounded-pill bg-secondary" title="Class C (Beginner)">
+                            <i class="bi bi-battery"></i> {{ levelCounts.C }} Class C
+                        </span>
+                    </span>
+                </h5>
                 <ul class="list-group">
                     <li class="list-group-item"
                         v-for="p in selected" 
