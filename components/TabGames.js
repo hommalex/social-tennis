@@ -655,16 +655,39 @@ const TabGames = {
             return "";
         };
 
-        const generateSchedule = () => {
-            const error = validate();
-            if (error) { errorMsg.value = error; return; }
-            errorMsg.value = "";
+        // How many pairings repeat in a freshly built schedule.
+        // `duplicatePartners` is what the red warnings flag (same two players on the
+        // same side twice); `repeatedMeetings` is the orange one (same two players in
+        // the same game twice, as partners or opponents).
+        const countScheduleRepeats = (schedule) => {
+            const partners = new Map();
+            const met = new Map();
+            const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
 
-            if (!props.data.current) props.data.current = {};
-            props.data.current.numOfRounds = config.numRounds;
-            props.data.current.gamesPerMatch = config.gamesPerMatch;
-            props.data.current.numOfCourts = config.numCourts;
+            schedule.forEach(round => (round.games || []).forEach(g => {
+                ['pairA', 'pairB'].forEach(pk => {
+                    const pair = g[pk];
+                    if (pair && pair.p1 && pair.p2)
+                        bump(partners, pairKeyOf(pair.p1.id, pair.p2.id));
+                });
+                const ps = [g.pairA.p1, g.pairA.p2, g.pairB.p1, g.pairB.p2].filter(Boolean);
+                for (let i = 0; i < ps.length; i++)
+                    for (let j = i + 1; j < ps.length; j++)
+                        bump(met, pairKeyOf(ps[i].id, ps[j].id));
+            }));
 
+            const excess = (m) => {
+                let n = 0;
+                m.forEach(count => { if (count > 1) n += count - 1; });
+                return n;
+            };
+            return { duplicatePartners: excess(partners), repeatedMeetings: excess(met) };
+        };
+
+        const MAX_GENERATION_ATTEMPTS = 20;
+
+        /** One randomised pass of the scheduler. Returns the rounds it produced. */
+        const buildSchedule = () => {
             const schedule = [];
             const players = [...props.selected];
             const pairHistory = {};  // tracks partner pairs across rounds
@@ -867,6 +890,34 @@ const TabGames = {
 
                 schedule.push({ roundNumber: r, games: roundGames, sitOuts: [] });
             }
+            return schedule;
+        };
+
+        const generateSchedule = () => {
+            const error = validate();
+            if (error) { errorMsg.value = error; return; }
+            errorMsg.value = "";
+
+            if (!props.data.current) props.data.current = {};
+            props.data.current.numOfRounds = config.numRounds;
+            props.data.current.gamesPerMatch = config.gamesPerMatch;
+            props.data.current.numOfCourts = config.numCourts;
+
+            // Building is randomised, so a single pass can still leave players
+            // partnered twice (red) or facing each other twice (orange). Rebuild up
+            // to MAX_GENERATION_ATTEMPTS times, stop as soon as a pass is clean, and
+            // otherwise keep the cleanest one — repeat partners weigh far more than
+            // repeat meetings, since only the former must be fixed by hand.
+            let schedule = null;
+            let bestScore = Infinity;
+            for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+                const candidate = buildSchedule();
+                const { duplicatePartners, repeatedMeetings } = countScheduleRepeats(candidate);
+                const score = duplicatePartners * 1000 + repeatedMeetings;
+                if (score < bestScore) { bestScore = score; schedule = candidate; }
+                if (score === 0) break;
+            }
+
             // Put the opening games straight onto courts 1..N and start them, so the
             // session begins with every court in play rather than everything awaiting.
             let nextCourt = 1;
