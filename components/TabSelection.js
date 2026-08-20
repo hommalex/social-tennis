@@ -609,6 +609,9 @@ const TabSelection = {
                         @blur="setTimeout(() => showDropdown = false, 200)"
                     >
                 </div>
+                <small v-if="selected.length > 0" class="form-text text-muted"> 
+                    Aim for roughly 25% Class A, 50% Class B, and 25% Class C players. (e.g., 5 Class A, 10 Class B, 5 Class C).
+                </small>
 
                 <ul class="list-group autocomplete-list" v-if="showDropdown && filteredPlayers.length > 0">
                     <li
@@ -763,6 +766,7 @@ const TabSelection = {
                     </div>
                     <div class="modal-body">
                         <p class="mb-3">You can quickly change any player's level by tapping the <strong>battery icon</strong> next to their name.</p>
+                        <p class="mb-3">Aim for roughly 25% Class A, 50% Class B, and 25% Class C players. (e.g., 5 Class A, 10 Class B, 5 Class C).</p>
                         <div class="text-center mb-3">
                             <div class="d-inline-flex flex-column gap-2 p-3 border rounded bg-light" style="min-width: 160px;">
                                 <div class="d-flex align-items-center gap-2">
