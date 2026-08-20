@@ -591,11 +591,30 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
+        /**
+         * Distinct players in the schedule who are not on court right now.
+         * A fill always ends up putting four off-court players on the spare court,
+         * so fewer than four free players means no swap can exist. With every court
+         * busy this is the same as needing 4 x courts + 4 players in the session.
+         */
+        const freePlayerCount = computed(() => {
+            const free = new Set();
+            generatedRounds.value.forEach(round => {
+                (round.games || []).forEach(g => {
+                    [g.pairA?.p1, g.pairA?.p2, g.pairB?.p1, g.pairB?.p2].forEach(p => {
+                        if (p && !activePlayerIds.value.has(p.id)) free.add(p.id);
+                    });
+                });
+            });
+            return free.size;
+        });
+
         /** True when a court is idle but nothing in the queue can go on it. */
         const needsCourtFill = computed(() =>
             generatedRounds.value.length > 0 &&
             freeCourts.value.length > 0 &&
             queueGames.value.length === 0 &&
+            freePlayerCount.value >= 4 &&
             generatedRounds.value.some(r => (r.games || []).some(g => g.status === 'awaiting'))
         );
 
