@@ -153,10 +153,12 @@
                         :data="jsonData"
                         :selected="socialSelectedPlayers"
                         :dialog="dialog"
+                        :levels-reviewed="levelsReviewed"
                         @update-selected="updateSelectedPlayers"
                         @save-new-player="saveNewPlayer"
                         @edit-player="handleEditPlayer"
                         @update-games="saveGames"
+                        @update-exceptions="savePairExceptions"
                         @switch-tab="currentTab = $event"
                         @substitute-player="handleSubstitutePlayer"
                         @finalize-session="handleFinalizeSession"
@@ -263,6 +265,9 @@
             const appMode = ref('social'); // 'social' | 'tournament'
             const sideMenuOpen = ref(false);
             const currentTab = ref('tab-selection');
+            // Deliberately not persisted: every page load starts locked again, so the
+            // levels get a fresh look before each schedule is generated.
+            const levelsReviewed = ref(false);
             const isLoading = ref(false);
             const isSaving = ref(false);
             const infoModal = ref(false);
@@ -374,6 +379,9 @@
 					}
                     
 
+                    // Older versions persisted this flag; it is session-only now.
+                    if (jsonData.value.current) delete jsonData.value.current.levelsReviewed;
+
                     // Ensure tournament structure exists
                     if (!jsonData.value.tournament) {
                         jsonData.value.tournament = { list: [], teams: [], games: [] };
@@ -419,6 +427,12 @@
             const handleEditPlayer = async (updatedInfo) => {
                 // 1. Update Master List
                 const playerIndex = jsonData.value.players.findIndex(p => p.id === updatedInfo.id);
+                // A real level change means the levels were reviewed for this session,
+                // which is what unlocks match generation on the Matches tab.
+                if (playerIndex !== -1 && updatedInfo.level &&
+                    jsonData.value.players[playerIndex].level !== updatedInfo.level) {
+                    levelsReviewed.value = true;
+                }
                 if (playerIndex !== -1) {
                     jsonData.value.players[playerIndex].name = updatedInfo.name;
                     jsonData.value.players[playerIndex].gender = updatedInfo.gender;
@@ -555,6 +569,8 @@
                 if (appMode.value === 'social') {
                     jsonData.value.current.games = [];
                     jsonData.value.current.list = [];
+                    jsonData.value.current.pairExceptions = [];
+                    levelsReviewed.value = false;
                     socialSelectedPlayers.value = [];
                 } else {
                     if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
@@ -597,6 +613,14 @@
                 syncToCloud();
             };
 
+            // Pairs the organisers have accepted as always-together, kept with the
+            // current session so the duplicate-partner banner stays quiet for them.
+            const savePairExceptions = async (pairs) => {
+                jsonData.value.current.pairExceptions = pairs;
+                jsonData.value.last_update = new Date().toISOString().split('T')[0];
+                syncToCloud();
+            };
+
             const saveTournamentTeams = async (teams) => {
                 if (!jsonData.value.tournament) jsonData.value.tournament = { list: [], teams: [], games: [] };
                 jsonData.value.tournament.teams = teams;
@@ -630,13 +654,13 @@
 
             return {
                 appMode, sideMenuOpen, switchMode,
-                currentTab, infoModal, tabs,
+                currentTab, infoModal, tabs, levelsReviewed,
                 jsonData, tournamentData,
                 socialSelectedPlayers, tournamentSelectedPlayers,
                 updateSelectedPlayers, saveNewPlayer,
                 handleEditPlayer, fetchData,
                 handleSubstitutePlayer, handleFinalizeSession, handleDeletePlayer,
-                isLoading, isSaving, saveGames,
+                isLoading, isSaving, saveGames, savePairExceptions,
                 saveTournamentTeams, saveTournamentGhosts, saveTournamentGames, handleRegenGames,
                 modalState, resolveModal, dialog,
                 thisYear

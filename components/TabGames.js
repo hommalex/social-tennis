@@ -1,6 +1,6 @@
 const TabGames = {
-    props: ['data', 'selected', 'dialog'],
-    emits: ['update-games', 'switch-tab'],
+    props: ['data', 'selected', 'dialog', 'levelsReviewed'],
+    emits: ['update-games', 'update-exceptions', 'switch-tab'],
     setup(props, { emit }) {
         const { ref, reactive, onMounted, onUnmounted, watch, computed } = Vue;
 
@@ -12,13 +12,16 @@ const TabGames = {
 
         const generatedRounds = ref([]); 
 
-        // Everyone starts at Class B, so an all-B list means the levels were
-        // never reviewed and the balancing has nothing to work with.
-        const levelsUntouched = computed(() =>
-            props.selected.length > 0 && props.selected.every(p => (p.level || 'B') === 'B')
-        );
+        // Players keep the level from their last session, so the values alone say
+        // nothing. levelsReviewed is flipped by the app the moment a level is
+        // actually changed on the Players tab, and it resets on every page load —
+        // until then, generating a schedule balances on stale data.
         const ignoreLevelWarning = ref(false);
-        const blockGenerate = computed(() => levelsUntouched.value && !ignoreLevelWarning.value);
+        const blockGenerate = computed(() =>
+            props.selected.length > 0 &&
+            !props.levelsReviewed &&
+            !ignoreLevelWarning.value
+        );
 
         const errorMsg = ref("");
         const showRound = ref(1);
@@ -42,6 +45,13 @@ const TabGames = {
         const conflictedPlayerIds = ref(new Set());
         const conflictMsg = ref("");
         const repeatedOpponentIds = ref(new Set());
+
+        // Some players only ever want to play together. A pair key listed here is
+        // still drawn in red — the schedule really does repeat it — but it no longer
+        // raises the banner asking for a swap. Stored with the current session.
+        const pairExceptions = ref([]);
+        // Duplicate pairs that are not yet excepted, as [{key, names}] for the prompt.
+        const unexceptedPairs = ref([]);
 
         const calculateActivePlayers = () => {
             const currentActive = new Set();
@@ -112,29 +122,71 @@ const TabGames = {
               empty: 'No games in play.' }
         ]);
 
+        /** Name of a player id, from the schedule first then the selection list. */
+        const playerName = (id) => {
+            let found = null;
+            (generatedRounds.value || []).forEach(round => {
+                (round.games || []).forEach(g => {
+                    [g.pairA?.p1, g.pairA?.p2, g.pairB?.p1, g.pairB?.p2].forEach(p => {
+                        if (p && String(p.id) === String(id)) found = p.name;
+                    });
+                });
+            });
+            if (found) return found;
+            const sel = (props.selected || []).find(p => String(p.id) === String(id));
+            return sel ? sel.name : 'Player';
+        };
+
         const checkConflicts = () => {
             const conflicts = new Set();
             conflictMsg.value = "";
+            unexceptedPairs.value = [];
 
             if (!generatedRounds.value) return;
 
             const { partners: pairHistory } = buildPairHistory();
+            const excepted = new Set(pairExceptions.value || []);
+            const pending = [];
 
-            let foundConflict = false;
             for (const [key, rounds] of pairHistory.entries()) {
                 if (rounds.length > 1) {
-                    foundConflict = true;
                     const ids = key.split('_');
                     conflicts.add(ids[0]);
                     conflicts.add(ids[1]);
+                    if (!excepted.has(key)) {
+                        pending.push({ key, names: ids.map(playerName) });
+                    }
                 }
             }
 
-            if (foundConflict) {
+            // Only pairs still awaiting a decision raise the banner — an excepted pair
+            // stays red so the repeat is visible, but it is no longer a problem to fix.
+            if (pending.length > 0) {
                 conflictMsg.value = "Warning: Duplicate partners detected (highlighted in red). Please swap players.";
+                unexceptedPairs.value = pending;
             }
 
             conflictedPlayerIds.value = conflicts;
+        };
+
+        /** Whitelist every currently-flagged pair so the banner stops asking. */
+        const addPairExceptions = async () => {
+            const pairs = unexceptedPairs.value;
+            if (pairs.length === 0) return;
+
+            const list = pairs.map(p => `${p.names[0]} and ${p.names[1]}`).join(', ');
+            const confirmed = await props.dialog.confirm(
+                "Add Exception",
+                `${list} will be added to the exception list and will no longer be reported as duplicate partners.`
+            );
+            if (!confirmed) return;
+
+            const merged = new Set(pairExceptions.value || []);
+            pairs.forEach(p => merged.add(p.key));
+            pairExceptions.value = Array.from(merged);
+
+            emit('update-exceptions', pairExceptions.value);
+            checkConflicts();
         };
 
         const checkRepeatedGames = () => {
@@ -190,6 +242,9 @@ const TabGames = {
                 if (props.data.current.gamesPerMatch) config.gamesPerMatch = props.data.current.gamesPerMatch;
                 if (props.data.current.numOfRounds) config.numRounds = props.data.current.numOfRounds;
                 if (props.data.current.numOfCourts) config.numCourts = props.data.current.numOfCourts;
+                pairExceptions.value = Array.isArray(props.data.current.pairExceptions)
+                    ? props.data.current.pairExceptions.slice()
+                    : [];
 
                 if (Array.isArray(props.data.current.games) && props.data.current.games.length > 0) {
                     generatedRounds.value = props.data.current.games;
@@ -644,6 +699,39 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
+		// --- Player focus: every round for one player ----------------------
+        const focusPlayer = ref(null);
+
+        const openPlayerRounds = (player) => {
+            if (player) focusPlayer.value = player;
+        };
+
+        /** One entry per round for the focused player: their game, or sitting out. */
+        const focusPlayerRounds = computed(() => {
+            const p = focusPlayer.value;
+            if (!p) return [];
+            return generatedRounds.value.map(round => {
+                const game = (round.games || []).find(g =>
+                    [g.pairA.p1, g.pairA.p2, g.pairB.p1, g.pairB.p2]
+                        .some(x => x && x.id === p.id));
+                if (!game) return { roundNumber: round.roundNumber, sittingOut: true };
+                const side = (game.pairA.p1 && game.pairA.p1.id === p.id)
+                          || (game.pairA.p2 && game.pairA.p2.id === p.id) ? 'A' : 'B';
+                const mine = side === 'A' ? game.pairA : game.pairB;
+                const them = side === 'A' ? game.pairB : game.pairA;
+                const partner = mine.p1 && mine.p1.id === p.id ? mine.p2 : mine.p1;
+                return {
+                    roundNumber: round.roundNumber,
+                    sittingOut: false,
+                    game,
+                    partner,
+                    opponents: [them.p1, them.p2].filter(Boolean),
+                    myScore: side === 'A' ? game.scoreA : game.scoreB,
+                    theirScore: side === 'A' ? game.scoreB : game.scoreA
+                };
+            });
+        });
+
 		const getHeaderClass = (status) => {
 			switch (status) {
 				case 'in_play': return 'bg-success text-white'; 
@@ -1018,6 +1106,8 @@ const TabGames = {
             saveScore,
             conflictedPlayerIds,
             conflictMsg,
+            addPairExceptions,
+            unexceptedPairs,
             repeatedOpponentIds,
             getPlayerNameClass,
             getPlayerStyle,
@@ -1034,7 +1124,10 @@ const TabGames = {
             toggleFullscreen,
             rootEl,
             blockGenerate,
-            ignoreLevelWarning
+            ignoreLevelWarning,
+            focusPlayer,
+            openPlayerRounds,
+            focusPlayerRounds
         };
     },
     template: `
@@ -1119,6 +1212,7 @@ const TabGames = {
             <div class="card-body">
                     <div v-if="conflictMsg" class="alert alert-danger mb-3">
                         <i class="bi bi-exclamation-octagon-fill"></i> {{ conflictMsg }}
+                        <a href="#" class="alert-link ms-1" @click.prevent="addPairExceptions">Add exception</a>
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
@@ -1271,12 +1365,12 @@ const TabGames = {
                                     <div class="card-body p-2">
                                         <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-5 border-primary">
                                             <div style="min-width: 0;">
-                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="getPlayerNameClass(game.pairA.p1.id)" :style="getPlayerStyle(game.pairA.p1.id, game.roundNum)">
+                                                <span class="d-flex align-items-center mb-1 text-truncate cursor-pointer" :class="getPlayerNameClass(game.pairA.p1.id)" :style="getPlayerStyle(game.pairA.p1.id, game.roundNum)" @click.stop="openPlayerRounds(game.pairA.p1)" title="See all rounds for this player">
                                                     <i v-if="activePlayerIds.has(game.pairA.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairA.p1.name }}</span>
                                                 </span>
-                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate" :class="getPlayerNameClass(game.pairA.p2.id)" :style="getPlayerStyle(game.pairA.p2.id, game.roundNum)">
+                                                <span v-if="game.pairA.p2" class="d-flex align-items-center text-truncate cursor-pointer" :class="getPlayerNameClass(game.pairA.p2.id)" :style="getPlayerStyle(game.pairA.p2.id, game.roundNum)" @click.stop="openPlayerRounds(game.pairA.p2)" title="See all rounds for this player">
                                                     <i v-if="activePlayerIds.has(game.pairA.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairA.p2.name }}</span>
@@ -1288,12 +1382,12 @@ const TabGames = {
                                         </div>
                                         <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5 border-danger">
                                             <div style="min-width: 0;">
-                                                <span class="d-flex align-items-center mb-1 text-truncate" :class="getPlayerNameClass(game.pairB.p1.id)" :style="getPlayerStyle(game.pairB.p1.id, game.roundNum)">
+                                                <span class="d-flex align-items-center mb-1 text-truncate cursor-pointer" :class="getPlayerNameClass(game.pairB.p1.id)" :style="getPlayerStyle(game.pairB.p1.id, game.roundNum)" @click.stop="openPlayerRounds(game.pairB.p1)" title="See all rounds for this player">
                                                     <i v-if="activePlayerIds.has(game.pairB.p1.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairB.p1.name }}</span>
                                                 </span>
-                                                <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate" :class="getPlayerNameClass(game.pairB.p2.id)" :style="getPlayerStyle(game.pairB.p2.id, game.roundNum)">
+                                                <span v-if="game.pairB.p2" class="d-flex align-items-center text-truncate cursor-pointer" :class="getPlayerNameClass(game.pairB.p2.id)" :style="getPlayerStyle(game.pairB.p2.id, game.roundNum)" @click.stop="openPlayerRounds(game.pairB.p2)" title="See all rounds for this player">
                                                     <i v-if="activePlayerIds.has(game.pairB.p2.id)" class="bi bi-activity text-success me-2 spinner-grow-sm flex-shrink-0"></i>
                                                     <i v-else class="bi bi-hourglass text-secondary me-2 flex-shrink-0"></i>
                                                     <span class="text-truncate">{{ game.pairB.p2.name }}</span>
@@ -1333,6 +1427,62 @@ const TabGames = {
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-primary" @click="showGuide = false">Got it</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="focusPlayer" class="modal custom-modal-backdrop" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" @click.self="focusPlayer = null">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title d-flex align-items-center">
+                            <i class="bi bi-person-fill me-2"></i>
+                            <span class="text-truncate">{{ focusPlayer.name }}</span>
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" @click="focusPlayer = null"></button>
+                    </div>
+                    <div class="modal-body p-2">
+                        <div v-for="r in focusPlayerRounds" :key="'fp' + r.roundNumber" class="card mb-2 border-secondary">
+                            <div class="card-header py-1 d-flex justify-content-between align-items-center"
+                                 :class="r.sittingOut ? 'bg-warning text-dark' : getHeaderClass(r.game.status)">
+                                <strong>
+                                    Round {{ r.roundNumber }}
+                                    <span v-if="!r.sittingOut && r.game.court" class="badge bg-dark ms-1">
+                                        <i class="bi bi-geo-alt-fill"></i> Court {{ r.game.court }}
+                                    </span>
+                                </strong>
+                                <span class="badge bg-light text-dark">
+                                    {{ r.sittingOut ? 'Sitting Out' : (r.game.status === 'in_play' ? 'In Play' : (r.game.status === 'finished' ? 'Finished' : 'Awaiting')) }}
+                                </span>
+                            </div>
+                            <div v-if="!r.sittingOut" class="card-body p-2">
+                                <div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded bg-light border-start border-5 border-primary">
+                                    <div style="min-width: 0;">
+                                        <div class="text-truncate fw-bold">{{ focusPlayer.name }}</div>
+                                        <div v-if="r.partner" class="text-truncate small text-muted">
+                                            with {{ r.partner.name }}
+                                        </div>
+                                    </div>
+                                    <span class="badge bg-secondary fs-6 flex-shrink-0">{{ r.myScore }}</span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light border-start border-5 border-danger">
+                                    <div style="min-width: 0;">
+                                        <div v-for="o in r.opponents" :key="o.id" class="text-truncate">{{ o.name }}</div>
+                                    </div>
+                                    <span class="badge bg-secondary fs-6 flex-shrink-0">{{ r.theirScore }}</span>
+                                </div>
+                                <div v-if="r.game.status === 'awaiting'" class="small fst-italic text-muted mt-2">
+                                    <i class="bi bi-info-circle"></i> Subject to change — players can still be swapped.
+                                </div>
+                            </div>
+                            <div v-else class="card-body p-2 small fst-italic text-muted">
+                                <i class="bi bi-info-circle"></i> Subject to change — players can still be swapped.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-primary" @click="focusPlayer = null">Close</button>
                     </div>
                 </div>
             </div>
@@ -1379,6 +1529,7 @@ const TabGames = {
 		<div v-if="!swapSource && conflictMsg" class="alert alert-danger position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-3 shadow-lg d-flex justify-content-center align-items-center" role="alert">
             <i class="bi bi-exclamation-octagon-fill me-2 fs-4"></i>
             <span class="fw-bold">{{ conflictMsg }}</span>
+            <a href="#" class="alert-link fw-bold ms-2" @click.prevent="addPairExceptions">Add exception</a>
         </div>
 		
 		<div v-if="swapSource" class="alert alert-info position-fixed bottom-0 start-0 end-0 m-0 rounded-0 z-3 shadow-lg d-flex justify-content-center align-items-center" role="alert">
