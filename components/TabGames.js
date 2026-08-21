@@ -614,7 +614,7 @@ const TabGames = {
             generatedRounds.value.length > 0 &&
             freeCourts.value.length > 0 &&
             queueGames.value.length === 0 &&
-            freePlayerCount.value >= 4 &&
+            freePlayerCount.value > 4 &&
             generatedRounds.value.some(r => (r.games || []).some(g => g.status === 'awaiting'))
         );
 
