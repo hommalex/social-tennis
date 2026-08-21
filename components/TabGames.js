@@ -29,8 +29,6 @@ const TabGames = {
         const activePlayerIds = ref(new Set());
         const activeGame = ref(null);
         const activePair = ref(null);
-        // Game ids that were just scored — kept visible in the Active view for a grace period
-        const recentlyFinished = ref(new Set());
 		// Helper to get name of player currently selected for swap
         const swapSourceName = computed(() => {
             if (!swapSource.value) return "";
@@ -96,17 +94,42 @@ const TabGames = {
             return list;
         };
 
-        /** Games on court right now, plus ones just scored so they don't vanish mid-glance. */
+        /** Games on court right now. */
         const activeGames = computed(() =>
-            flatten(g => g.status === 'in_play' || recentlyFinished.value.has(g.id))
+            flatten(g => g.status === 'in_play')
                 .sort((a, b) => (a.court || 99) - (b.court || 99)));
 
         /**
-         * Next up: awaiting games whose four players are all off court.
+         * The last five games scored, most recent first. finishedAt is stamped on
+         * save; games scored before it existed sort to the back rather than
+         * disappearing.
+         */
+        const FINISHED_SHOWN = 5;
+        const finishedGames = computed(() =>
+            flatten(g => g.status === 'finished')
+                .sort((a, b) => String(b.finishedAt || '').localeCompare(String(a.finishedAt || '')))
+                .slice(0, FINISHED_SHOWN));
+
+        /**
+         * Next up. Two modes, depending on whether the session has spare players.
          * Not gated on viewMode — needsCourtFill depends on this being accurate
          * whichever view happens to be open.
          */
         const queueGames = computed(() => {
+            // Without a spare game's worth of players the session runs round by
+            // round: everyone plays, then everyone moves on. The queue is simply
+            // the next round — its players are still on court, and that is fine,
+            // because they are the only ones who can play it. Later rounds are
+            // noise, so only the earliest waiting round is shown.
+            if (!canEverFillCourt.value) {
+                const awaiting = flatten(g => g.status === 'awaiting');
+                if (!awaiting.length) return [];
+                const nextRound = Math.min(...awaiting.map(g => g.roundNum));
+                return awaiting.filter(g => g.roundNum === nextRound);
+            }
+
+            // Enough players to overlap rounds: only games whose four players are
+            // all off court can actually start, whichever round they belong to.
             return flatten(g => {
                 if (g.status !== 'awaiting') return false;
                 const busy = (p) => p && activePlayerIds.value.has(p.id);
@@ -119,7 +142,9 @@ const TabGames = {
             { key: 'queue',  title: 'Queue',  icon: 'bi-hourglass', games: queueGames.value,
               empty: 'Nothing ready — everyone waiting is still on court.' },
             { key: 'active', title: 'Active', icon: 'bi-activity',  games: activeGames.value,
-              empty: 'No games in play.' }
+              empty: 'No games in play.' },
+            { key: 'finished', title: 'Finished', icon: 'bi-check2-circle', games: finishedGames.value,
+              empty: 'No games scored yet.' }
         ]);
 
         /** Name of a player id, from the schedule first then the selection list. */
@@ -591,30 +616,34 @@ const TabGames = {
             emit('update-games', generatedRounds.value);
         };
 
-        /**
-         * Distinct players in the schedule who are not on court right now.
-         * A fill always ends up putting four off-court players on the spare court,
-         * so fewer than four free players means no swap can exist. With every court
-         * busy this is the same as needing 4 x courts + 4 players in the session.
-         */
-        const freePlayerCount = computed(() => {
-            const free = new Set();
+        /** Every distinct player in the schedule, on court or not. */
+        const totalPlayerCount = computed(() => {
+            const all = new Set();
             generatedRounds.value.forEach(round => {
                 (round.games || []).forEach(g => {
                     [g.pairA?.p1, g.pairA?.p2, g.pairB?.p1, g.pairB?.p2].forEach(p => {
-                        if (p && !activePlayerIds.value.has(p.id)) free.add(p.id);
+                        if (p) all.add(p.id);
                     });
                 });
             });
-            return free.size;
+            return all.size;
         });
+
+        /**
+         * A spare court can only ever be filled when the competition carries a
+         * spare game's worth of players on top of a full house: 4 x courts + 4.
+         * With 5 courts that is 24 players, with 4 courts 20, and so on. Below
+         * that the swap is arithmetically impossible, so the banner stays down.
+         */
+        const canEverFillCourt = computed(() =>
+            totalPlayerCount.value >= config.numCourts * 4 + 4);
 
         /** True when a court is idle but nothing in the queue can go on it. */
         const needsCourtFill = computed(() =>
             generatedRounds.value.length > 0 &&
             freeCourts.value.length > 0 &&
             queueGames.value.length === 0 &&
-            freePlayerCount.value > 4 &&
+            canEverFillCourt.value &&
             generatedRounds.value.some(r => (r.games || []).some(g => g.status === 'awaiting'))
         );
 
@@ -676,6 +705,7 @@ const TabGames = {
                 targetGame.scoreA = 0;
                 targetGame.scoreB = 0;
                 targetGame.court = null;
+                targetGame.finishedAt = null;
             }
 
             calculateActivePlayers();
@@ -702,15 +732,7 @@ const TabGames = {
                 activeGame.value.scoreA = config.gamesPerMatch - score;
             }
             activeGame.value.status = 'finished';
-
-            // Keep this game visible in the Active view for 20s so the score can be double-checked
-            const finishedId = activeGame.value.id;
-            recentlyFinished.value = new Set(recentlyFinished.value).add(finishedId);
-            setTimeout(() => {
-                const next = new Set(recentlyFinished.value);
-                next.delete(finishedId);
-                recentlyFinished.value = next;
-            }, 20000);
+            activeGame.value.finishedAt = new Date().toISOString();
 
             activeGame.value = null;
             activePair.value = null;
@@ -1137,6 +1159,7 @@ const TabGames = {
             needsCourtFill,
             activeGames,
             queueGames,
+            finishedGames,
 			getBatteryData,
             showGuide,
             isFullscreen,
@@ -1350,7 +1373,7 @@ const TabGames = {
                                 <h5 class="mb-0 text-secondary">
                                     <i class="bi" :class="section.icon"></i> {{ section.title }}
                                 </h5>
-                                <span class="badge bg-secondary ms-2">{{ section.games.length }}</span>
+                                <span v-if="section.key !== 'finished'" class="badge bg-secondary ms-2">{{ section.games.length }}</span>
                             </div>
                             <div v-if="section.key === 'queue' && needsCourtFill"
                                  class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between py-2 mb-2">

@@ -193,6 +193,7 @@
 		@{{ thisYear }} - Navan Tennis Club
 	</div>
 			
+	<teleport :to="modalHost">
 	<div v-if="modalState.show" class="modal custom-modal-backdrop">
 		<div class="modal-dialog">
 			<div class="modal-content shadow">
@@ -225,6 +226,7 @@
 			</div>
 		</div>
 	</div>
+	</teleport>
 </div>
 
 <script>
@@ -354,6 +356,14 @@
                     });
                 }
             };
+
+            // Native fullscreen renders only the fullscreen element's subtree, so
+            // modals that live at app root are invisible while a tab is fullscreen.
+            // Teleport them into whatever element currently owns the screen.
+            const fullscreenEl = ref(null);
+            const modalHost = computed(() => fullscreenEl.value || 'body');
+            const syncModalHost = () => { fullscreenEl.value = document.fullscreenElement || null; };
+            onMounted(() => document.addEventListener('fullscreenchange', syncModalHost));
 
             const resolveModal = (result) => {
                 modalState.show = false;
@@ -662,7 +672,7 @@
                 handleSubstitutePlayer, handleFinalizeSession, handleDeletePlayer,
                 isLoading, isSaving, saveGames, savePairExceptions,
                 saveTournamentTeams, saveTournamentGhosts, saveTournamentGames, handleRegenGames,
-                modalState, resolveModal, dialog,
+                modalState, resolveModal, dialog, modalHost,
                 thisYear
             };
         }
