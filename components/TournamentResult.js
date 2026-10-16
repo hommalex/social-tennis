@@ -75,7 +75,7 @@ const TournamentResult = {
                  class="card mb-3 shadow-sm"
                  :class="index === 0 && team.played > 0 ? 'border-warning border-3' : ''">
                 <div class="card-header d-flex justify-content-between align-items-center"
-                     :class="team.color === 'warning' ? 'bg-warning text-dark' : 'bg-' + (team.color || 'primary') + ' text-white'">
+                     :class="team.color === 'warning' ? 'bg-warning text-dark' : team.color === 'secondary' ? 'team-dark-grey text-white' : 'bg-' + (team.color || 'primary') + ' text-white'">
                     <div class="d-flex align-items-center">
                         <span v-if="index === 0 && team.played > 0" class="me-2">
                             <i class="bi bi-trophy-fill text-warning fs-5"></i>

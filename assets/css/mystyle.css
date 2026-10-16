@@ -176,3 +176,10 @@
 .games-fullscreen .card {
     margin-bottom: 0 !important;
 }
+
+/* Team tournament: dark grey team colour (white text) */
+.team-dark-grey { background-color: #495057 !important; }
+.team-dark-grey-footer { background-color: #6c757d !important; }
+.border-team-grey { border-color: #495057 !important; }
+.team-dark-grey h1, .team-dark-grey h2, .team-dark-grey h3,
+.team-dark-grey h4, .team-dark-grey h5, .team-dark-grey h6 { color: #fff; }

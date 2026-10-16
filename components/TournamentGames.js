@@ -2,7 +2,7 @@ const TournamentGames = {
     props: ['data', 'selected', 'dialog'],
     emits: ['update-tournament-games'],
     setup(props, { emit }) {
-        const { ref, computed, watch, onMounted } = Vue;
+        const { ref, computed, watch, onMounted, onUnmounted } = Vue;
 
         const generatedRounds = ref([]);
         const errorMsg = ref('');
@@ -51,27 +51,120 @@ const TournamentGames = {
             activePlayerIds.value = active;
         };
 
-        const filteredGames = computed(() => {
-            if (viewMode.value === 'rounds') return [];
+        // --- Courts --------------------------------------------------------
+        // A court is held only by a game in play; finished games keep their court
+        // number for the record but release the court itself.
+        const numCourts = ref(5);
+        const courtNumbers = computed(() =>
+            Array.from({ length: numCourts.value }, (_, i) => i + 1));
+
+        const occupiedCourts = computed(() => {
+            const busy = new Set();
+            generatedRounds.value.forEach(round => {
+                (round.games || []).forEach(g => {
+                    if (g.status === 'in_play' && g.court) busy.add(g.court);
+                });
+            });
+            return busy;
+        });
+
+        const freeCourts = computed(() =>
+            courtNumbers.value.filter(c => !occupiedCourts.value.has(c)));
+
+        /** Lowest free court, preferring the one already pencilled in for this game. */
+        const claimCourt = (game) => {
+            const free = freeCourts.value;
+            if (game.court && free.includes(game.court)) return game.court;
+            return free.length ? free[0] : null;
+        };
+
+        const setNumCourts = (n) => {
+            numCourts.value = n;
+            if (props.data?.tournament) props.data.tournament.numOfCourts = n;
+        };
+
+        // --- Board view: Queue, Active and Finished together ---------------
+        const flatten = (predicate) => {
             const list = [];
             generatedRounds.value.forEach((round, rIdx) => {
-                round.games?.forEach((game, gIdx) => {
-                    let include = false;
-                    if (viewMode.value === 'active' && game.status === 'in_play') {
-                        include = true;
-                    } else if (viewMode.value === 'queue' && game.status === 'awaiting') {
-                        // Show ALL awaiting games across all rounds — in a tournament the same
-                        // players repeat each round, so a per-player busy check would hide
-                        // future-round games whenever round 1 is in progress.
-                        include = true;
-                    }
-                    if (include) {
-                        list.push({ ...game, roundNum: round.roundNumber, originalRIdx: rIdx, originalGIdx: gIdx });
-                    }
+                (round.games || []).forEach((game, gIdx) => {
+                    if (!predicate(game)) return;
+                    list.push({ ...game, roundNum: round.roundNumber, originalRIdx: rIdx, originalGIdx: gIdx });
                 });
             });
             return list;
+        };
+
+        const activeGames = computed(() =>
+            flatten(g => g.status === 'in_play')
+                .sort((a, b) => (a.court || 99) - (b.court || 99)));
+
+        // The last five games scored, most recent first.
+        const FINISHED_SHOWN = 5;
+        const finishedGames = computed(() =>
+            flatten(g => g.status === 'finished')
+                .sort((a, b) => String(b.finishedAt || '').localeCompare(String(a.finishedAt || '')))
+                .slice(0, FINISHED_SHOWN));
+
+        const playerLabel = (g, id) => {
+            const p = [g.pairA?.p1, g.pairA?.p2, g.pairB?.p1, g.pairB?.p2].find(x => x && x.id === id);
+            return p ? p.name : '';
+        };
+
+        // Next up, in the planned order, with ready games ahead of blocked ones.
+        // Normally just the earliest round still waiting; if none of those can go
+        // on court yet, ready games from later rounds are offered too.
+        const queueGames = computed(() => {
+            const awaiting = flatten(g => g.status === 'awaiting').map(g => {
+                const busyNames = gamePlayerIds(g)
+                    .filter(id => activePlayerIds.value.has(id))
+                    .map(id => playerLabel(g, id));
+                return { ...g, busyNames, blocked: busyNames.length > 0 };
+            });
+            if (!awaiting.length) return [];
+            const order = (a, b) =>
+                (a.seq ?? a.roundNum * 100 + a.originalGIdx) - (b.seq ?? b.roundNum * 100 + b.originalGIdx);
+            const nextRound = Math.min(...awaiting.map(g => g.roundNum));
+            let list = awaiting.filter(g => g.roundNum === nextRound);
+            if (!list.some(g => !g.blocked)) {
+                list = list.concat(awaiting.filter(g => g.roundNum > nextRound && !g.blocked));
+            }
+            return list.sort((a, b) => (a.blocked - b.blocked) || order(a, b));
         });
+
+        const boardSections = computed(() => [
+            { key: 'queue',  title: 'Queue',  icon: 'bi-hourglass', games: queueGames.value,
+              empty: 'Nothing waiting.' },
+            { key: 'active', title: 'Active', icon: 'bi-activity',  games: activeGames.value,
+              empty: 'No games in play.' },
+            { key: 'finished', title: 'Finished', icon: 'bi-check2-circle', games: finishedGames.value,
+              empty: 'No games scored yet.' }
+        ]);
+
+        // --- Fullscreen (courts view) --------------------------------------
+        const isFullscreen = ref(false);
+        const rootEl = ref(null);
+
+        const syncFullscreen = () => {
+            if (document.fullscreenElement === null && isFullscreen.value) {
+                isFullscreen.value = false;
+            }
+        };
+
+        const toggleFullscreen = async () => {
+            if (isFullscreen.value) {
+                isFullscreen.value = false;
+                if (document.fullscreenElement && document.exitFullscreen) {
+                    try { await document.exitFullscreen(); } catch (e) {}
+                }
+                return;
+            }
+            isFullscreen.value = true;
+            const el = rootEl.value;
+            if (el && el.requestFullscreen) {
+                try { await el.requestFullscreen(); } catch (e) {} // stays CSS-only
+            }
+        };
 
         // Latin square pairing: for round rIdx, male j partners female (j + rIdx) % numFemales
         const getTeamPairings = (team, roundIdx) => {
@@ -117,6 +210,43 @@ const TournamentGames = {
                 t.splice(1, 0, last);
             }
             return rounds;
+        };
+
+        const gamePlayerIds = (g) =>
+            [g.pairA?.p1, g.pairA?.p2, g.pairB?.p1, g.pairB?.p2].filter(Boolean).map(x => x.id);
+
+        /**
+         * Plans the order games should go on court. Everyone plays once per round,
+         * so a game started right after another that shares a player will find that
+         * player still on court. Pick each next game to share as few players as
+         * possible with the games most recently started (the ones still playing),
+         * staying within one round of the earliest unplayed round. Stamps game.seq.
+         */
+        const planGameOrder = (schedule) => {
+            const remaining = [];
+            schedule.forEach((round, rIdx) => (round.games || []).forEach((game, gIdx) => {
+                remaining.push({ game, rIdx, gIdx, ids: gamePlayerIds(game) });
+            }));
+            const onCourt = [];   // the last (numCourts - 1) started
+            let seq = 1;
+            while (remaining.length) {
+                const earliest = Math.min(...remaining.map(r => r.rIdx));
+                const busy = new Set(onCourt.flatMap(r => r.ids));
+                let best = null, bestKey = null;
+                remaining.forEach(r => {
+                    if (r.rIdx > earliest + 1) return;
+                    const key = [r.ids.filter(id => busy.has(id)).length, r.rIdx, r.gIdx];
+                    if (!bestKey || key[0] < bestKey[0] ||
+                        (key[0] === bestKey[0] && (key[1] < bestKey[1] ||
+                        (key[1] === bestKey[1] && key[2] < bestKey[2])))) {
+                        best = r; bestKey = key;
+                    }
+                });
+                best.game.seq = seq++;
+                remaining.splice(remaining.indexOf(best), 1);
+                onCourt.push(best);
+                if (onCourt.length > Math.max(numCourts.value - 1, 1)) onCourt.shift();
+            }
         };
 
         const generateSchedule = () => {
@@ -166,6 +296,21 @@ const TournamentGames = {
                 schedule.push({ roundNumber: rIdx + 1, games: roundGames, sitOuts: [] });
             });
 
+            // Put the opening games straight onto courts 1..N and start them.
+            planGameOrder(schedule);
+            let nextCourt = 1;
+            schedule.flatMap(round => round.games || [])
+                .sort((a, b) => a.seq - b.seq)
+                .forEach(g => {
+                    if (nextCourt <= numCourts.value) {
+                        g.court = nextCourt++;
+                        g.status = 'in_play';
+                    } else {
+                        g.court = null;
+                    }
+                });
+
+            if (props.data?.tournament) props.data.tournament.numOfCourts = numCourts.value;
             generatedRounds.value = schedule;
             calculateActivePlayers();
             emit('update-tournament-games', schedule);
@@ -179,17 +324,39 @@ const TournamentGames = {
             emit('update-tournament-games', []);
         };
 
-        const switchStatus = (game) => {
+        const switchStatus = async (game) => {
             let target = game;
             if (game.originalRIdx !== undefined) {
                 target = generatedRounds.value[game.originalRIdx].games[game.originalGIdx];
             }
-            if (target.status === 'awaiting') target.status = 'in_play';
-            else if (target.status === 'in_play') target.status = 'awaiting';
-            else if (target.status === 'finished') {
+            if (target.status === 'awaiting') {
+                const court = claimCourt(target);
+                if (!court) {
+                    props.dialog.alert("No court free", "You need add a result on a court.");
+                    return;
+                }
+                const busyIds = gamePlayerIds(target).filter(id => activePlayerIds.value.has(id));
+                if (busyIds.length) {
+                    props.dialog.alert("Players on court",
+                        `Still playing another game: ${busyIds.map(id => playerLabel(target, id)).join(', ')}.`);
+                    return;
+                }
+                target.court = court;
+                target.status = 'in_play';
+            } else if (target.status === 'in_play') {
+                target.status = 'awaiting';
+                target.court = null;
+            } else if (target.status === 'finished') {
+                const confirmed = await props.dialog.confirm(
+                    "Reset Game",
+                    "This game is finished. Are you sure you want to reset its score back to 0?"
+                );
+                if (!confirmed) return;
                 target.status = 'awaiting';
                 target.scoreA = 0;
                 target.scoreB = 0;
+                target.court = null;
+                target.finishedAt = null;
             }
             calculateActivePlayers();
             emit('update-tournament-games', generatedRounds.value);
@@ -210,6 +377,7 @@ const TournamentGames = {
             activeGame.value.scoreA = parseInt(scoreInputA.value) || 0;
             activeGame.value.scoreB = parseInt(scoreInputB.value) || 0;
             activeGame.value.status = 'finished';
+            activeGame.value.finishedAt = new Date().toISOString();
             activeGame.value = null;
             calculateActivePlayers();
             emit('update-tournament-games', generatedRounds.value);
@@ -274,8 +442,11 @@ const TournamentGames = {
             return 'bg-secondary text-dark';
         };
 
+        const getPairBorderClass = (color) =>
+            color === 'secondary' ? 'border-team-grey' : 'border-' + color;
+
         const getTeamBadgeClass = (color) => {
-            if (color === 'secondary') return 'bg-secondary text-dark';
+            if (color === 'secondary') return 'team-dark-grey text-white';
             return `bg-${color || 'primary'} text-white`;
         };
 
@@ -293,6 +464,8 @@ const TournamentGames = {
         const hasMounted = ref(false);
 
         const loadExisting = () => {
+            const saved = props.data?.tournament?.numOfCourts;
+            if (saved) numCourts.value = saved;
             const games = props.data?.tournament?.games;
             if (Array.isArray(games) && games.length > 0) {
                 generatedRounds.value = games;
@@ -316,23 +489,26 @@ const TournamentGames = {
         onMounted(() => {
             loadExisting();
             hasMounted.value = true;
+            document.addEventListener('fullscreenchange', syncFullscreen);
         });
+        onUnmounted(() => document.removeEventListener('fullscreenchange', syncFullscreen));
 
         return {
             teams, generatedRounds, errorMsg, showRound, viewMode,
             activePlayerIds, swapSource, swapSourceLabel,
             activeGame, scoreInputA, scoreInputB,
-            filteredGames, hasFinishedGames,
+            hasFinishedGames, numCourts, setNumCourts, freeCourts,
+            boardSections, isFullscreen, rootEl, toggleFullscreen,
             generateSchedule, resetGames, switchStatus,
             openScoreModal, saveScore, handlePairSwap,
-            getHeaderClass, getTeamBadgeClass, getBorderStyle,
+            getHeaderClass, getTeamBadgeClass, getPairBorderClass, getBorderStyle,
             getTeam, getPlayer
         };
     },
     template: `
-    <div>
+    <div ref="rootEl" :class="{ 'games-fullscreen': isFullscreen }">
         <!-- Config / Generate Panel -->
-        <div v-if="!hasFinishedGames" class="card bg-light mb-4">
+        <div v-if="!hasFinishedGames && !isFullscreen" class="card bg-light mb-4">
             <div class="card-body">
                 <div v-if="generatedRounds.length === 0">
                     <div class="row g-3 align-items-center">
@@ -347,6 +523,16 @@ const TournamentGames = {
                             <button class="btn btn-success w-100" @click="generateSchedule">
                                 <i class="bi bi-controller"></i> Generate Matches
                             </button>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-3">
+                        <span class="fw-bold">Courts:</span>
+                        <div class="btn-group" role="group">
+                            <template v-for="n in [3,4,5,6,7]" :key="'tc'+n">
+                                <input type="radio" class="btn-check" name="tnumcourts" :id="'tc'+n"
+                                       :checked="numCourts === n" @click="setNumCourts(n)">
+                                <label class="btn btn-outline-success" :for="'tc'+n">{{ n }}</label>
+                            </template>
                         </div>
                     </div>
                     <div v-if="errorMsg" class="alert alert-danger mt-3 mb-0">
@@ -370,15 +556,20 @@ const TournamentGames = {
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
                     <h4 class="text-success mb-0">
-                        {{ viewMode === 'rounds' ? 'Round' : viewMode === 'active' ? 'Active' : 'Queue' }}
+                        {{ viewMode === 'rounds' ? 'Round' : 'Courts' }}
                     </h4>
-                    <div class="btn-group" role="group">
-                        <input type="radio" class="btn-check" name="tvm" id="tvm1" value="rounds" v-model="viewMode">
-                        <label class="btn btn-outline-success" for="tvm1"><i class="bi bi-list-ol"></i></label>
-                        <input type="radio" class="btn-check" name="tvm" id="tvm2" value="active" v-model="viewMode">
-                        <label class="btn btn-outline-success" for="tvm2"><i class="bi bi-activity"></i></label>
-                        <input type="radio" class="btn-check" name="tvm" id="tvm3" value="queue" v-model="viewMode">
-                        <label class="btn btn-outline-success" for="tvm3"><i class="bi bi-hourglass"></i></label>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="btn-group" role="group">
+                            <input type="radio" class="btn-check" name="tvm" id="tvm1" value="rounds" v-model="viewMode">
+                            <label class="btn btn-outline-success" for="tvm1" title="By round"><i class="bi bi-list-ol"></i></label>
+                            <input type="radio" class="btn-check" name="tvm" id="tvm2" value="board" v-model="viewMode">
+                            <label class="btn btn-outline-success" for="tvm2" title="Queue and Active together"><i class="bi bi-columns-gap"></i></label>
+                        </div>
+                        <button v-if="viewMode === 'board'" type="button" class="btn btn-outline-secondary"
+                                :title="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+                                @click="toggleFullscreen">
+                            <i class="bi" :class="isFullscreen ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i>
+                        </button>
                     </div>
                 </div>
 
@@ -409,6 +600,9 @@ const TournamentGames = {
                                                 {{ getTeam(game.pairA.teamId)?.name || 'Team A' }}
                                                 vs
                                                 {{ getTeam(game.pairB.teamId)?.name || 'Team B' }}
+                                                <span v-if="game.court" class="badge bg-dark ms-1">
+                                                    <i class="bi bi-geo-alt-fill"></i> Court {{ game.court }}
+                                                </span>
                                             </strong>
                                             <span class="badge bg-light text-dark">
                                                 {{ game.status === 'in_play' ? 'In Play' : game.status === 'finished' ? 'Finished' : 'Awaiting' }}
@@ -418,7 +612,7 @@ const TournamentGames = {
                                         <div class="card-body p-2">
                                             <!-- Pair A -->
                                             <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-4"
-                                                 :class="'border-' + (getTeam(game.pairA.teamId)?.color || 'primary')">
+                                                 :class="getPairBorderClass(getTeam(game.pairA.teamId)?.color || 'primary')">
                                                 <div style="min-width:0">
                                                     <div class="d-flex align-items-center mb-1">
                                                         <i v-if="activePlayerIds.has(game.pairA.p1?.id)"
@@ -453,7 +647,7 @@ const TournamentGames = {
 
                                             <!-- Pair B -->
                                             <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-4"
-                                                 :class="'border-' + (getTeam(game.pairB.teamId)?.color || 'danger')">
+                                                 :class="getPairBorderClass(getTeam(game.pairB.teamId)?.color || 'danger')">
                                                 <div style="min-width:0">
                                                     <div class="d-flex align-items-center mb-1">
                                                         <i v-if="activePlayerIds.has(game.pairB.p1?.id)"
@@ -493,51 +687,79 @@ const TournamentGames = {
                     </div>
                 </template>
 
-                <!-- Flat Views (Active / Queue) -->
+                <!-- Board View: Queue / Active / Finished -->
                 <template v-else>
-                    <div v-if="filteredGames.length === 0" class="text-center py-5 text-muted">
-                        <i class="bi bi-inbox fs-1"></i>
-                        <p>No matches in this view.</p>
-                    </div>
-                    <div class="row row-cols-1 row-cols-md-2 g-3">
-                        <div class="col" v-for="game in filteredGames" :key="game.id">
-                            <div class="card h-100 border-secondary shadow-sm">
-                                <div class="card-header py-1 d-flex justify-content-between"
-                                     style="cursor:pointer"
-                                     :class="getHeaderClass(game.status)"
-                                     @click="switchStatus(game)">
-                                    <strong class="small">
-                                        R{{ game.roundNum }}:
-                                        {{ getTeam(game.pairA.teamId)?.name }} vs {{ getTeam(game.pairB.teamId)?.name }}
-                                    </strong>
-                                    <span class="badge bg-light text-dark">
-                                        {{ game.status === 'in_play' ? 'In Play' : 'Awaiting' }}
-                                    </span>
-                                </div>
-                                <div class="card-body p-2">
-                                    <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-4 border-primary">
+                    <div v-for="section in boardSections" :key="section.key" class="mb-4">
+                        <div class="d-flex align-items-center border-bottom pb-1 mb-2">
+                            <h5 class="mb-0 text-secondary">
+                                <i class="bi" :class="section.icon"></i> {{ section.title }}
+                            </h5>
+                            <span v-if="section.key !== 'finished'" class="badge bg-secondary ms-2">{{ section.games.length }}</span>
+                        </div>
+                        <div v-if="section.games.length === 0" class="text-muted fst-italic small">
+                            {{ section.empty }}
+                        </div>
+                        <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 1rem;">
+                            <div v-for="game in section.games" :key="game.id">
+                                <div class="card h-100 border-secondary shadow-sm">
+                                    <div class="card-header py-1 d-flex justify-content-between align-items-center"
+                                         style="cursor:pointer"
+                                         :class="getHeaderClass(game.status)"
+                                         @click="switchStatus(game)">
+                                        <strong class="small">
+                                            R{{ game.roundNum }}
+                                            <span v-if="game.court" class="badge bg-dark ms-1">
+                                                <i class="bi bi-geo-alt-fill"></i> Court {{ game.court }}
+                                            </span>
+                                        </strong>
+                                        <span class="badge bg-light text-dark">
+                                            {{ game.status === 'in_play' ? 'In Play' : (game.status === 'finished' ? 'Finished' : 'Awaiting') }}
+                                        </span>
+                                    </div>
+                                    <div class="card-body p-2">
+                                        <div v-if="game.blocked" class="text-muted mb-1 text-truncate" style="font-size:0.75rem"
+                                             :title="game.busyNames.join(', ')">
+                                            <i class="bi bi-hourglass-split"></i> Waiting for {{ game.busyNames.join(', ') }}
+                                        </div>
+                                        <div v-else-if="game.blocked === false" class="small text-success mb-1">
+                                            <i class="bi bi-check-circle-fill"></i> Ready
+                                        </div>
+                                    <div class="d-flex justify-content-between mb-2 p-2 rounded bg-light border-start border-5"
+                                         :class="getPairBorderClass(getTeam(game.pairA.teamId)?.color || 'primary')">
                                         <div style="min-width:0">
+                                            <span class="badge mb-1 d-inline-block"
+                                                  :class="getTeamBadgeClass(getTeam(game.pairA.teamId)?.color)"
+                                                  style="font-size:0.65rem">{{ getTeam(game.pairA.teamId)?.name }}</span>
                                             <div class="fw-bold small text-truncate">
+                                                <i v-if="activePlayerIds.has(game.pairA.p1?.id)" class="bi bi-activity text-success me-1"></i>
                                                 <i class="bi bi-gender-male text-primary me-1"></i>{{ game.pairA.p1?.name }}
                                             </div>
                                             <div class="fw-bold small text-truncate">
+                                                <i v-if="activePlayerIds.has(game.pairA.p2?.id)" class="bi bi-activity text-success me-1"></i>
                                                 <i class="bi bi-gender-female text-danger me-1"></i>{{ game.pairA.p2?.name }}
                                             </div>
                                         </div>
-                                        <button class="btn btn-outline-secondary btn-lg flex-shrink-0"
+                                        <button type="button" class="btn btn-outline-secondary btn-lg flex-shrink-0 ms-2"
                                                 @click.stop="openScoreModal(game)">{{ game.scoreA }}</button>
                                     </div>
-                                    <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-4 border-danger">
+                                    <div class="d-flex justify-content-between p-2 rounded bg-light border-start border-5"
+                                         :class="getPairBorderClass(getTeam(game.pairB.teamId)?.color || 'danger')">
                                         <div style="min-width:0">
+                                            <span class="badge mb-1 d-inline-block"
+                                                  :class="getTeamBadgeClass(getTeam(game.pairB.teamId)?.color)"
+                                                  style="font-size:0.65rem">{{ getTeam(game.pairB.teamId)?.name }}</span>
                                             <div class="fw-bold small text-truncate">
+                                                <i v-if="activePlayerIds.has(game.pairB.p1?.id)" class="bi bi-activity text-success me-1"></i>
                                                 <i class="bi bi-gender-male text-primary me-1"></i>{{ game.pairB.p1?.name }}
                                             </div>
                                             <div class="fw-bold small text-truncate">
+                                                <i v-if="activePlayerIds.has(game.pairB.p2?.id)" class="bi bi-activity text-success me-1"></i>
                                                 <i class="bi bi-gender-female text-danger me-1"></i>{{ game.pairB.p2?.name }}
                                             </div>
                                         </div>
-                                        <button class="btn btn-outline-secondary btn-lg flex-shrink-0"
+                                        <button type="button" class="btn btn-outline-secondary btn-lg flex-shrink-0 ms-2"
                                                 @click.stop="openScoreModal(game)">{{ game.scoreB }}</button>
+                                    </div>
                                     </div>
                                 </div>
                             </div>
@@ -547,7 +769,7 @@ const TournamentGames = {
             </div>
         </div>
 
-        <p v-if="hasFinishedGames" class="text-secondary small">Reset is disabled once a match has been finalised.</p>
+        <p v-if="hasFinishedGames && !isFullscreen" class="text-secondary small">Reset is disabled once a match has been finalised.</p>
 
         <!-- Score Modal (open scoring — enter both scores) -->
         <div v-if="activeGame" class="modal custom-modal-backdrop">

@@ -218,11 +218,11 @@ const TournamentTeams = {
         };
 
         const getTeamHeaderClass = (color) => {
-            return `bg-${color || 'primary'} text-white`;
+            return color === 'secondary' ? 'team-dark-grey text-white' : `bg-${color || 'primary'} text-white`;
         };
 
         const getTeamFooterClass = (color) => {
-            return `bg-${color || 'primary'} bg-opacity-75 text-white`;
+            return color === 'secondary' ? 'team-dark-grey team-dark-grey-footer text-white' : `bg-${color || 'primary'} bg-opacity-75 text-white`;
         };
 
         const getBadgeClass = () => {

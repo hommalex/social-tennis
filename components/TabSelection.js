@@ -1,5 +1,5 @@
 const TabSelection = {
-    props: ['data', 'selected', 'dialog'],
+    props: ['data', 'selected', 'dialog', 'tournamentMode'],
 	emits: ['update-selected', 'save-new-player', 'edit-player', 'substitute-player', 'finalize-session', 'delete-player'],
     setup(props, { emit }) {
         const { ref, computed } = Vue; 
@@ -568,7 +568,7 @@ const TabSelection = {
     template: `
         <div>
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4 class="card-title text-primary mb-0">Select Players</h4>
+                <h4 class="card-title mb-0" :class="tournamentMode ? 'text-success' : 'text-primary'">Select Players</h4>
                 <div class="d-flex gap-2">
                     <button class="btn btn-sm btn-outline-success" @click="importFromSpond" :disabled="spondBusy" title="Import tonight's attendees from Spond">
                         <span v-if="spondBusy" class="spinner-border spinner-border-sm me-1" role="status"></span>
@@ -610,7 +610,7 @@ const TabSelection = {
                     >
                 </div>
                 <small v-if="selected.length > 0" class="form-text text-muted"> 
-                    Aim for roughly 25% Class A, 50% Class B, and 25% Class C players. (e.g., 5 Class A, 10 Class B, 5 Class C).
+                    <template v-if="tournamentMode">Aim for an equal number of Class A, Class B, and Class C players. (e.g., 8 Class A, 8 Class B, 8 Class C).</template><template v-else>Aim for roughly 25% Class A, 50% Class B, and 25% Class C players. (e.g., 5 Class A, 10 Class B, 5 Class C).</template>
                 </small>
 
                 <ul class="list-group autocomplete-list" v-if="showDropdown && filteredPlayers.length > 0">
@@ -766,7 +766,7 @@ const TabSelection = {
                     </div>
                     <div class="modal-body">
                         <p class="mb-3">You can quickly change any player's level by tapping the <strong>battery icon</strong> next to their name.</p>
-                        <p class="mb-3">Aim for roughly 25% Class A, 50% Class B, and 25% Class C players. (e.g., 5 Class A, 10 Class B, 5 Class C).</p>
+                        <p class="mb-3"><template v-if="tournamentMode">Aim for an equal number of Class A, Class B, and Class C players. (e.g., 8 Class A, 8 Class B, 8 Class C).</template><template v-else>Aim for roughly 25% Class A, 50% Class B, and 25% Class C players. (e.g., 5 Class A, 10 Class B, 5 Class C).</template></p>
                         <div class="text-center mb-3">
                             <div class="d-inline-flex flex-column gap-2 p-3 border rounded bg-light" style="min-width: 160px;">
                                 <div class="d-flex align-items-center gap-2">
