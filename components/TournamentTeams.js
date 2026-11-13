@@ -8,8 +8,8 @@ const TournamentTeams = {
         const editingTeamId = ref(null);
         const editTeamName = ref('');
 
-        const TEAM_COLORS = ['primary', 'danger', 'success', 'warning', 'info', 'secondary', 'dark'];
-        const TEAM_NAMES = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta'];
+        const TEAM_COLORS = ['primary', 'danger', 'success', 'warning', 'info', 'secondary', 'dark', 'purple', 'teal'];
+        const TEAM_NAMES = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta', 'Iota'];
 
         const generateId = () => Math.random().toString(36).slice(2, 10);
 

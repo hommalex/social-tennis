@@ -183,3 +183,11 @@
 .border-team-grey { border-color: #495057 !important; }
 .team-dark-grey h1, .team-dark-grey h2, .team-dark-grey h3,
 .team-dark-grey h4, .team-dark-grey h5, .team-dark-grey h6 { color: #fff; }
+
+/* Team tournament: extra team colours (teams 8 and 9), usable as bg-/border- like Bootstrap's */
+.bg-purple { --bs-bg-opacity: 1; background-color: rgba(123, 63, 181, var(--bs-bg-opacity)) !important; }
+.bg-teal { --bs-bg-opacity: 1; background-color: rgba(15, 158, 143, var(--bs-bg-opacity)) !important; }
+.border-purple { border-color: #7b3fb5 !important; }
+.border-teal { border-color: #0f9e8f !important; }
+.bg-purple h1, .bg-purple h2, .bg-purple h3, .bg-purple h4, .bg-purple h5, .bg-purple h6,
+.bg-teal h1, .bg-teal h2, .bg-teal h3, .bg-teal h4, .bg-teal h5, .bg-teal h6 { color: #fff; }

@@ -454,7 +454,7 @@ const TournamentGames = {
             const colorMap = {
                 primary: '#0d6efd', danger: '#dc3545', success: '#198754',
                 warning: '#ffc107', info: '#0dcaf0', secondary: '#6c757d',
-                dark: '#212529'
+                dark: '#212529', purple: '#7b3fb5', teal: '#0f9e8f'
             };
             const team = getTeam(teamId);
             const color = colorMap[team?.color] || colorMap.primary;
