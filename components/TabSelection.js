@@ -64,15 +64,45 @@ const TabSelection = {
             );
         });
 
-        // Class breakdown for the selected list header
+        // Class x gender breakdown for the selected list header
         const levelCounts = computed(() => {
-            const counts = { A: 0, B: 0, C: 0 };
+            const counts = { A: { M: 0, F: 0 }, B: { M: 0, F: 0 }, C: { M: 0, F: 0 } };
             props.selected.forEach(p => {
                 const lvl = p.level || 'B';
-                if (counts[lvl] !== undefined) counts[lvl]++;
+                if (counts[lvl]) counts[lvl][p.gender === 'Female' ? 'F' : 'M']++;
             });
             return counts;
         });
+
+        // Display order of the selected list (view only; the saved order is untouched)
+        const SORT_KEY = 'ntc-selected-sort';
+        let savedSort = null;
+        try { savedSort = localStorage.getItem(SORT_KEY); } catch (e) {}
+        const sortBy = ref(['name', 'gender', 'level'].includes(savedSort) ? savedSort : 'name');
+        const setSort = (key) => {
+            sortBy.value = key;
+            try { localStorage.setItem(SORT_KEY, key); } catch (e) {}
+        };
+        const sortedSelected = computed(() => {
+            const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+            const genderRank = p => (p.gender === 'Female' ? 1 : 0);
+            const levelRank = p => ({ A: 0, B: 1, C: 2 }[p.level || 'B'] ?? 1);
+            const list = [...props.selected];
+            if (sortBy.value === 'gender') {
+                list.sort((a, b) => genderRank(a) - genderRank(b) || levelRank(a) - levelRank(b) || byName(a, b));
+            } else if (sortBy.value === 'level') {
+                list.sort((a, b) => levelRank(a) - levelRank(b) || genderRank(a) - genderRank(b) || byName(a, b));
+            } else {
+                list.sort(byName);
+            }
+            return list;
+        });
+
+        const levelBadges = [
+            { level: 'A', cls: 'bg-success', icon: 'bi-battery-full', label: 'Expert' },
+            { level: 'B', cls: 'bg-info', icon: 'bi-battery-half', label: 'Intermediate' },
+            { level: 'C', cls: 'bg-secondary', icon: 'bi-battery', label: 'Beginner' },
+        ];
 
         const isAlreadySelected = (playerId) => {
             return props.selected.some(sel => sel.id === playerId);
@@ -518,6 +548,10 @@ const TabSelection = {
             showDropdown,
             filteredPlayers,
             levelCounts,
+            levelBadges,
+            sortBy,
+            setSort,
+            sortedSelected,
             newPlayerGender,
             newPlayerLevel,
             editingId,
@@ -665,20 +699,33 @@ const TabSelection = {
                 <h5 class="text-secondary border-bottom pb-2 d-flex flex-wrap align-items-center gap-2">
                     <span>Selected Players ({{ selected.length }})</span>
                     <span class="d-flex flex-wrap gap-1">
-                        <span class="badge rounded-pill bg-success" title="Class A (Expert)">
-                            <i class="bi bi-battery-full"></i> {{ levelCounts.A }} Class A
-                        </span>
-                        <span class="badge rounded-pill bg-info" title="Class B (Intermediate)">
-                            <i class="bi bi-battery-half"></i> {{ levelCounts.B }} Class B
-                        </span>
-                        <span class="badge rounded-pill bg-secondary" title="Class C (Beginner)">
-                            <i class="bi bi-battery"></i> {{ levelCounts.C }} Class C
-                        </span>
+                        <template v-for="b in levelBadges" :key="b.level">
+                            <span class="badge rounded-pill" :class="b.cls" :title="'Class ' + b.level + ' (' + b.label + ') - Male'">
+                                <i class="bi" :class="b.icon"></i> {{ levelCounts[b.level].M }} Class {{ b.level }} <i class="bi bi-gender-male"></i>
+                            </span>
+                            <span class="badge rounded-pill" :class="b.cls" :title="'Class ' + b.level + ' (' + b.label + ') - Female'">
+                                <i class="bi" :class="b.icon"></i> {{ levelCounts[b.level].F }} Class {{ b.level }} <i class="bi bi-gender-female"></i>
+                            </span>
+                        </template>
                     </span>
                 </h5>
+                <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+                    <small class="text-muted">Sort by</small>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Sort selected players">
+                        <button type="button" class="btn" :class="sortBy === 'name' ? 'btn-primary' : 'btn-outline-primary'" @click="setSort('name')">
+                            <i class="bi bi-sort-alpha-down"></i> Name
+                        </button>
+                        <button type="button" class="btn" :class="sortBy === 'gender' ? 'btn-primary' : 'btn-outline-primary'" @click="setSort('gender')">
+                            <i class="bi bi-gender-ambiguous"></i> Gender
+                        </button>
+                        <button type="button" class="btn" :class="sortBy === 'level' ? 'btn-primary' : 'btn-outline-primary'" @click="setSort('level')">
+                            <i class="bi bi-battery-half"></i> Class
+                        </button>
+                    </div>
+                </div>
                 <ul class="list-group">
                     <li class="list-group-item"
-                        v-for="p in selected" 
+                        v-for="p in sortedSelected" 
                         :key="p.id"
 						:class="{ 
                             'list-group-item-warning': switchingPlayer && switchingPlayer.id === p.id,
