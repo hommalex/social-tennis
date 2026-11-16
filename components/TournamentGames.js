@@ -111,9 +111,10 @@ const TournamentGames = {
             return p ? p.name : '';
         };
 
-        // Next up, in the planned order, with ready games ahead of blocked ones.
-        // Normally just the earliest round still waiting; if none of those can go
-        // on court yet, ready games from later rounds are offered too.
+        // Every game still waiting, round by round: the rest of the current
+        // round first, then the next round's, so players can get ready early.
+        // Within a round, ready games come ahead of ones whose players are
+        // still on court, then the planned order.
         const queueGames = computed(() => {
             const awaiting = flatten(g => g.status === 'awaiting').map(g => {
                 const busyNames = gamePlayerIds(g)
@@ -121,15 +122,10 @@ const TournamentGames = {
                     .map(id => playerLabel(g, id));
                 return { ...g, busyNames, blocked: busyNames.length > 0 };
             });
-            if (!awaiting.length) return [];
             const order = (a, b) =>
                 (a.seq ?? a.roundNum * 100 + a.originalGIdx) - (b.seq ?? b.roundNum * 100 + b.originalGIdx);
-            const nextRound = Math.min(...awaiting.map(g => g.roundNum));
-            let list = awaiting.filter(g => g.roundNum === nextRound);
-            if (!list.some(g => !g.blocked)) {
-                list = list.concat(awaiting.filter(g => g.roundNum > nextRound && !g.blocked));
-            }
-            return list.sort((a, b) => (a.blocked - b.blocked) || order(a, b));
+            return awaiting.sort((a, b) =>
+                (a.roundNum - b.roundNum) || (a.blocked - b.blocked) || order(a, b));
         });
 
         // Only show as many queued games as there are courts: enough for the
