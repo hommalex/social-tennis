@@ -106,6 +106,10 @@ const TournamentGames = {
                 .sort((a, b) => String(b.finishedAt || '').localeCompare(String(a.finishedAt || '')))
                 .slice(0, FINISHED_SHOWN));
 
+        // Rounds view: on court right now, or not yet.
+        const playerStatusIcon = (p) => activePlayerIds.value.has(p?.id)
+            ? 'bi-activity text-success' : 'bi-hourglass text-secondary';
+
         const playerLabel = (g, id) => {
             const p = [g.pairA?.p1, g.pairA?.p2, g.pairB?.p1, g.pairB?.p2].find(x => x && x.id === id);
             return p ? p.name : '';
@@ -496,7 +500,7 @@ const TournamentGames = {
 
         return {
             teams, generatedRounds, errorMsg, showRound, viewMode,
-            activePlayerIds, swapSource, swapSourceLabel,
+            activePlayerIds, playerStatusIcon, swapSource, swapSourceLabel,
             activeGame, scoreInputA, scoreInputB,
             hasFinishedGames, numCourts, setNumCourts, freeCourts,
             boardSections, isFullscreen, rootEl, toggleFullscreen,
@@ -616,9 +620,6 @@ const TournamentGames = {
                                                  :class="getPairBorderClass(getTeam(game.pairA.teamId)?.color || 'primary')">
                                                 <div style="min-width:0">
                                                     <div class="d-flex align-items-center mb-1">
-                                                        <i v-if="activePlayerIds.has(game.pairA.p1?.id)"
-                                                           class="bi bi-activity text-success me-1 flex-shrink-0"></i>
-                                                        <i v-else class="bi bi-hourglass text-secondary me-1 flex-shrink-0"></i>
                                                         <button class="btn btn-sm p-0 px-1 me-1 flex-shrink-0"
                                                                 :class="swapSource?.gIdx === gIdx && swapSource?.rIdx === rIdx && swapSource?.pairKey === 'pairA' ? 'btn-warning' : 'btn-outline-secondary'"
                                                                 @click.stop="handlePairSwap(rIdx, gIdx, 'pairA')"
@@ -631,12 +632,12 @@ const TournamentGames = {
                                                             {{ getTeam(game.pairA.teamId)?.name }}
                                                         </span>
                                                     </div>
-                                                    <div class="ps-4">
+                                                    <div>
                                                         <div class="fw-bold small text-truncate">
-                                                            <i class="bi bi-gender-male text-primary me-1"></i>{{ game.pairA.p1?.name }}
+                                                            <i class="bi me-1" :class="playerStatusIcon(game.pairA.p1)"></i><i class="bi bi-gender-male text-primary me-1"></i>{{ game.pairA.p1?.name }}
                                                         </div>
                                                         <div class="fw-bold small text-truncate">
-                                                            <i class="bi bi-gender-female text-danger me-1"></i>{{ game.pairA.p2?.name }}
+                                                            <i class="bi me-1" :class="playerStatusIcon(game.pairA.p2)"></i><i class="bi bi-gender-female text-danger me-1"></i>{{ game.pairA.p2?.name }}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -651,9 +652,6 @@ const TournamentGames = {
                                                  :class="getPairBorderClass(getTeam(game.pairB.teamId)?.color || 'danger')">
                                                 <div style="min-width:0">
                                                     <div class="d-flex align-items-center mb-1">
-                                                        <i v-if="activePlayerIds.has(game.pairB.p1?.id)"
-                                                           class="bi bi-activity text-success me-1 flex-shrink-0"></i>
-                                                        <i v-else class="bi bi-hourglass text-secondary me-1 flex-shrink-0"></i>
                                                         <button class="btn btn-sm p-0 px-1 me-1 flex-shrink-0"
                                                                 :class="swapSource?.gIdx === gIdx && swapSource?.rIdx === rIdx && swapSource?.pairKey === 'pairB' ? 'btn-warning' : 'btn-outline-secondary'"
                                                                 @click.stop="handlePairSwap(rIdx, gIdx, 'pairB')"
@@ -666,12 +664,12 @@ const TournamentGames = {
                                                             {{ getTeam(game.pairB.teamId)?.name }}
                                                         </span>
                                                     </div>
-                                                    <div class="ps-4">
+                                                    <div>
                                                         <div class="fw-bold small text-truncate">
-                                                            <i class="bi bi-gender-male text-primary me-1"></i>{{ game.pairB.p1?.name }}
+                                                            <i class="bi me-1" :class="playerStatusIcon(game.pairB.p1)"></i><i class="bi bi-gender-male text-primary me-1"></i>{{ game.pairB.p1?.name }}
                                                         </div>
                                                         <div class="fw-bold small text-truncate">
-                                                            <i class="bi bi-gender-female text-danger me-1"></i>{{ game.pairB.p2?.name }}
+                                                            <i class="bi me-1" :class="playerStatusIcon(game.pairB.p2)"></i><i class="bi bi-gender-female text-danger me-1"></i>{{ game.pairB.p2?.name }}
                                                         </div>
                                                     </div>
                                                 </div>
