@@ -132,9 +132,14 @@ const TournamentGames = {
             return list.sort((a, b) => (a.blocked - b.blocked) || order(a, b));
         });
 
+        // Only show as many queued games as there are courts: enough for the
+        // next wave of players to get ready, without listing the whole round.
+        const queueShown = computed(() => queueGames.value.slice(0, numCourts.value));
+        const queueHidden = computed(() => queueGames.value.length - queueShown.value.length);
+
         const boardSections = computed(() => [
-            { key: 'queue',  title: 'Queue',  icon: 'bi-hourglass', games: queueGames.value,
-              empty: 'Nothing waiting.' },
+            { key: 'queue',  title: 'Queue',  icon: 'bi-hourglass', games: queueShown.value,
+              hidden: queueHidden.value, empty: 'Nothing waiting.' },
             { key: 'active', title: 'Active', icon: 'bi-activity',  games: activeGames.value,
               empty: 'No games in play.' },
             { key: 'finished', title: 'Finished', icon: 'bi-check2-circle', games: finishedGames.value,
@@ -695,6 +700,7 @@ const TournamentGames = {
                                 <i class="bi" :class="section.icon"></i> {{ section.title }}
                             </h5>
                             <span v-if="section.key !== 'finished'" class="badge bg-secondary ms-2">{{ section.games.length }}</span>
+                            <span v-if="section.hidden" class="text-muted small ms-2">+{{ section.hidden }} more waiting</span>
                         </div>
                         <div v-if="section.games.length === 0" class="text-muted fst-italic small">
                             {{ section.empty }}
