@@ -146,8 +146,23 @@
             <div class="card-body">
                 <transition name="fade" mode="out-in">
 
+                    <!-- Result tabs: passcode first -->
+                    <div v-if="resultLocked" key="result-lock" class="text-center py-4">
+                        <i class="bi bi-lock-fill fs-1 text-secondary"></i>
+                        <p class="mt-2 mb-3 text-muted">Enter the passcode to see the results.</p>
+                        <form class="d-flex justify-content-center gap-2" @submit.prevent="checkResultCode">
+                            <input type="password" inputmode="numeric" autocomplete="off"
+                                   class="form-control text-center" style="max-width:140px"
+                                   :class="{ 'is-invalid': resultCodeWrong }"
+                                   v-model="resultCodeInput" placeholder="Passcode">
+                            <button type="submit" class="btn"
+                                    :class="appMode === 'social' ? 'btn-primary' : 'btn-success'">Unlock</button>
+                        </form>
+                        <div v-if="resultCodeWrong" class="text-danger small mt-2">Wrong passcode.</div>
+                    </div>
+
                     <!-- Social Tuesday Components -->
-                    <component v-if="appMode === 'social'"
+                    <component v-else-if="appMode === 'social'"
                         :key="'social-' + currentTab"
                         :is="currentTab"
                         :data="jsonData"
@@ -271,6 +286,20 @@
             // Deliberately not persisted: every page load starts locked again, so the
             // levels get a fresh look before each schedule is generated.
             const levelsReviewed = ref(false);
+            // Result tabs sit behind a simple passcode, so players browsing the
+            // page don't see the results. Not real security: the code is in the
+            // page source. Unlocked until the page is reloaded.
+            const RESULT_CODE = '046';
+            const resultUnlocked = ref(false);
+            const resultCodeInput = ref('');
+            const resultCodeWrong = ref(false);
+            const resultLocked = computed(() => !resultUnlocked.value &&
+                (currentTab.value === 'tab-result' || currentTab.value === 'tournament-result'));
+            const checkResultCode = () => {
+                resultCodeWrong.value = resultCodeInput.value.trim() !== RESULT_CODE;
+                if (!resultCodeWrong.value) resultUnlocked.value = true;
+                resultCodeInput.value = '';
+            };
             const isLoading = ref(false);
             const isSaving = ref(false);
             const infoModal = ref(false);
@@ -666,6 +695,7 @@
             return {
                 appMode, sideMenuOpen, switchMode,
                 currentTab, infoModal, tabs, levelsReviewed,
+                resultLocked, resultCodeInput, resultCodeWrong, checkResultCode,
                 jsonData, tournamentData,
                 socialSelectedPlayers, tournamentSelectedPlayers,
                 updateSelectedPlayers, saveNewPlayer,
