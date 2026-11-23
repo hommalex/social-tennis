@@ -117,7 +117,7 @@
                 <button class="btn btn-sm btn-outline-light me-2" @click="sideMenuOpen = true">
                     <i class="bi bi-grid-3x3-gap"></i>
                 </button>
-                <a class="navbar-brand mb-0" href="#">
+                <a class="navbar-brand mb-0" :href="'#/' + appMode">
                     <img src="./assets/images/NavanLogo.png" style="height: 32px" alt="logo" class="me-2" />
                     <span v-if="appMode === 'social'">NTC Social Tennis</span>
                     <span v-else>NTC Team Tournament</span>
@@ -136,7 +136,7 @@
             <li class="nav-item" v-for="(tab, index) in tabs" :key="index">
                 <a class="nav-link"
                    :class="[{ active: currentTab === tab.component }, appMode === 'tournament' ? 'text-success' : '']"
-                   href="#" @click.prevent="currentTab = tab.component">
+                   :href="'#/' + appMode + '/' + tab.slug">
                     {{ tab.name }}
                 </a>
             </li>
@@ -174,7 +174,7 @@
                         @edit-player="handleEditPlayer"
                         @update-games="saveGames"
                         @update-exceptions="savePairExceptions"
-                        @switch-tab="currentTab = $event"
+                        @switch-tab="goToTab"
                         @substitute-player="handleSubstitutePlayer"
                         @finalize-session="handleFinalizeSession"
                         @delete-player="handleDeletePlayer"
@@ -321,19 +321,41 @@
             const tournamentSelectedPlayers = ref([]);
 
             const socialTabs = [
-                { name: 'Players', component: 'tab-selection' },
-                { name: 'Matches', component: 'tab-games' },
-                { name: 'Result', component: 'tab-result' }
+                { name: 'Players', slug: 'players', component: 'tab-selection' },
+                { name: 'Matches', slug: 'matches', component: 'tab-games' },
+                { name: 'Result', slug: 'result', component: 'tab-result' }
             ];
 
             const tournamentTabs = [
-                { name: 'Players', component: 'tab-selection' },
-                { name: 'Teams', component: 'tournament-teams' },
-                { name: 'Matches', component: 'tournament-games' },
-                { name: 'Result', component: 'tournament-result' }
+                { name: 'Players', slug: 'players', component: 'tab-selection' },
+                { name: 'Teams', slug: 'teams', component: 'tournament-teams' },
+                { name: 'Matches', slug: 'matches', component: 'tournament-games' },
+                { name: 'Result', slug: 'result', component: 'tournament-result' }
             ];
 
-            const tabs = computed(() => appMode.value === 'social' ? socialTabs : tournamentTabs);
+            const tabsByMode = { social: socialTabs, tournament: tournamentTabs };
+            const tabs = computed(() => tabsByMode[appMode.value]);
+
+            // --- Hash routes: #/<mode>/<tab>, e.g. #/social/matches, #/tournament/teams ---
+            // The hash is the source of truth: links and buttons change it, and
+            // applyRoute() turns it into appMode/currentTab. A missing or unknown
+            // part falls back to Social Tuesday / Players.
+            const applyRoute = () => {
+                const [mode, slug] = location.hash.replace(/^#\/?/, '').split('/');
+                const routeMode = tabsByMode[mode] ? mode : 'social';
+                const tab = tabsByMode[routeMode].find(t => t.slug === slug) || tabsByMode[routeMode][0];
+                appMode.value = routeMode;
+                currentTab.value = tab.component;
+                const canonical = `#/${routeMode}/${tab.slug}`;
+                if (location.hash !== canonical) history.replaceState(null, '', canonical);
+            };
+            applyRoute();
+            window.addEventListener('hashchange', applyRoute);
+
+            const goToTab = (component) => {
+                const tab = tabs.value.find(t => t.component === component);
+                if (tab) location.hash = `#/${appMode.value}/${tab.slug}`;
+            };
 
             // For tournament mode: expose tournament.games as current.games so TabSelection
             // active-player detection works correctly
@@ -352,8 +374,7 @@
             });
 
             const switchMode = (mode) => {
-                appMode.value = mode;
-                currentTab.value = 'tab-selection';
+                location.hash = `#/${mode}/players`;
                 sideMenuOpen.value = false;
             };
 
@@ -693,7 +714,7 @@
             });
 
             return {
-                appMode, sideMenuOpen, switchMode,
+                appMode, sideMenuOpen, switchMode, goToTab,
                 currentTab, infoModal, tabs, levelsReviewed,
                 resultLocked, resultCodeInput, resultCodeWrong, checkResultCode,
                 jsonData, tournamentData,
