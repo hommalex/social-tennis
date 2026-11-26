@@ -280,7 +280,7 @@
             'tournament-result': TournamentResult
         },
         setup() {
-            const appMode = ref('social'); // 'social' | 'tournament'
+            const appMode = ref('tournament'); // 'social' | 'tournament'
             const sideMenuOpen = ref(false);
             const currentTab = ref('tab-selection');
             // Deliberately not persisted: every page load starts locked again, so the
@@ -339,10 +339,10 @@
             // --- Hash routes: #/<mode>/<tab>, e.g. #/social/matches, #/tournament/teams ---
             // The hash is the source of truth: links and buttons change it, and
             // applyRoute() turns it into appMode/currentTab. A missing or unknown
-            // part falls back to Social Tuesday / Players.
+            // part falls back to Team Tournament / Players.
             const applyRoute = () => {
                 const [mode, slug] = location.hash.replace(/^#\/?/, '').split('/');
-                const routeMode = tabsByMode[mode] ? mode : 'social';
+                const routeMode = tabsByMode[mode] ? mode : 'tournament';
                 const tab = tabsByMode[routeMode].find(t => t.slug === slug) || tabsByMode[routeMode][0];
                 appMode.value = routeMode;
                 currentTab.value = tab.component;
